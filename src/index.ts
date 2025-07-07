@@ -18,6 +18,7 @@ import userRoutes from "./routes/users";
 import uploadRoutes from "./routes/upload";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
+import path from "path";
 
 const app = express();
 const server = createServer(app);
@@ -64,6 +65,16 @@ app.use(
 		origin: process.env.CLIENT_URL || "http://localhost:3000",
 	}),
 );
+
+// Serve static frontend only in production
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "public")));
+
+  // React router support
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+  });
+}
 
 // Compression middleware
 app.use(compression());
