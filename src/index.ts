@@ -66,7 +66,6 @@ app.use(
 	}),
 );
 
-
 // Compression middleware
 app.use(compression());
 
@@ -76,8 +75,8 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "OK",
+	res.status(200).json({
+		status: "OK",
 		timestamp: new Date().toISOString(),
 		environment: process.env.NODE_ENV || "development",
 	});
@@ -92,24 +91,20 @@ app.use("/api/upload", uploadRoutes);
 
 // Serve static frontend only in production
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "public")));
+	console.log("Setting up static file serving from:", path.join(__dirname, "public"));
+	app.use(express.static(path.join(__dirname, "public")));
 
-  // React router support
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-  });
+	// React router support
+	app.get("*", (req, res) => {
+		console.log("Serving index.html for:", req.path);
+		const indexPath = path.join(__dirname, "public", "index.html");
+		console.log("Index path:", indexPath);
+		res.sendFile(indexPath);
+	});
 }
 
 // Socket.IO for real-time features
 initSocket(io);
-
-// 404 handler
-app.use("*", (req, res) => {
-	res.status(404).json({
-		success: false,
-		message: "Route not found",
-	});
-});
 
 // Global error handler
 app.use(errorHandler);
@@ -117,8 +112,8 @@ app.use(errorHandler);
 // Database connection and server startup
 const startServer = async () => {
 	try {
-    await connectDatabase();
-    await verifyTransporter();
+		await connectDatabase();
+		await verifyTransporter();
 		console.log("✅ Database connected successfully");
 
 		server.listen(PORT, () => {
@@ -148,4 +143,4 @@ process.on("SIGINT", () => {
 });
 
 startServer();
-export default app; 
+export default app;
