@@ -66,15 +66,6 @@ app.use(
 	}),
 );
 
-// Serve static frontend only in production
-if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "public")));
-
-  // React router support
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-  });
-}
 
 // Compression middleware
 app.use(compression());
@@ -85,8 +76,8 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-	res.status(200).json({
-		status: "OK",
+  res.status(200).json({
+    status: "OK",
 		timestamp: new Date().toISOString(),
 		environment: process.env.NODE_ENV || "development",
 	});
@@ -98,6 +89,16 @@ app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
+
+// Serve static frontend only in production
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "public")));
+
+  // React router support
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+  });
+}
 
 // Socket.IO for real-time features
 initSocket(io);
