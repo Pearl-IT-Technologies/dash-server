@@ -1,4 +1,3 @@
-// controllers/orderController.ts
 import Order from "../models/Order";
 import { Request, Response } from "express";
 import Product from "../models/Product";
@@ -7,6 +6,8 @@ import { AppError } from "../utils/AppError";
 import { io } from "../index";
 import crypto from "crypto";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
+import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "@/services/emailService";
+import { getStaffMails } from "@/utils/GetStaffMails";
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -94,6 +95,8 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
 // @access  Private
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 	const { userId, items, shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
+	const lowStocks = [];
+	const outOfStocks = [];
 
 	if (!items || items.length === 0) {
 		throw new AppError("No order items provided", 400);
@@ -142,8 +145,12 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
 		// Update product stock
 		product.stockCount -= item.quantity;
+
 		if (product.stockCount === 0) {
 			product.inStock = false;
+			outOfStocks.push(product);
+		} else if (product.stockCount < 10) {
+			lowStocks.push(product);
 		}
 		await product.save();
 
@@ -180,9 +187,45 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 	// Emit real-time update
 	io.emit("order-created", order);
 
+	// Notify user about new order
+	if (order.billingAddress?.email) {
+		await orderPlacedMail(order.billingAddress.email, {
+			orderNumber: order.orderNumber,
+			items: order.items,
+			total: order.total,
+			shippingAddress: order.shippingAddress,
+			paymentMethod: order.paymentMethod,
+		});
+	}
+
+	await staffOrderNotificationMail(await getStaffMails(["admin", "storekeeper"]), {
+		orderNumber: order.orderNumber,
+		items: order.items,
+		total: order.total,
+		shippingAddress: order.shippingAddress,
+		paymentMethod: order.paymentMethod,
+		customerEmail: order.billingAddress?.email,
+	});
+
+	// Send stock alert emails if any products are low on stock
+	if (lowStocks.length > 0) {
+		//Alert Staffs for out of stock
+		await stockAlertMail(await getStaffMails(["admin", "storekeeper", "salesrep"]), {
+			products: lowStocks,
+			alertType: "low_stock",
+		});
+	}
+
+	// Send stock alert emails if any products are out of stock
+	if (outOfStocks.length > 0) {
+		await stockAlertMail(await getStaffMails(["admin", "storekeeper", "salesrep"]), {
+			products: outOfStocks,
+			alertType: "out_of_stock",
+		});
+	}
+
 	res.status(201).json(order);
 });
-
 
 // Add this to your orderController.ts
 // @desc    Update order
@@ -203,7 +246,8 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 	if (status !== undefined) updateData.status = status;
 	if (paymentStatus !== undefined) updateData.paymentStatus = paymentStatus;
 	if (trackingNumber !== undefined) updateData.trackingNumber = trackingNumber?.trim() || null;
-	if (estimatedDelivery !== undefined) updateData.estimatedDelivery = estimatedDelivery ? new Date(estimatedDelivery) : null;
+	if (estimatedDelivery !== undefined)
+		updateData.estimatedDelivery = estimatedDelivery ? new Date(estimatedDelivery) : null;
 	if (notes !== undefined) updateData.notes = notes?.trim() || null;
 
 	// Auto-set deliveredAt when status becomes delivered
@@ -219,12 +263,9 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 		}
 	}
 
-	const order = await Order.findByIdAndUpdate(
-		req.params.id,
-		updateData,
-		{ new: true, runValidators: true }
-	).populate("user", "firstName lastName email")
-	 .populate("items.product", "name images");
+	const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true })
+		.populate("user", "firstName lastName email")
+		.populate("items.product", "name images");
 
 	// Emit real-time update
 	io.emit("order-updated", order);
@@ -301,6 +342,12 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 	order.cancelledAt = new Date();
 	order.cancelReason = reason;
 	await order.save();
+
+	// Emit real-time update
+	io.emit("order-updated", {
+		orderId: order._id,
+		status: order.status,
+	});
 
 	res.status(200).json(order);
 });

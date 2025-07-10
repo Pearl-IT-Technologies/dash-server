@@ -65,7 +65,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 	res.status(200).json(product);
 });
 
-// @desc    Delete product
+// @desc    Delete product permanently
 // @route   DELETE /api/products/:id
 // @access  Private (Admin)
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
@@ -73,15 +73,17 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
 
 	if (!product) {
 		throw new AppError("Product not found", 404);
-	}
+  }
+  
+  console.log("deleting")
 
-	// Soft delete - just mark as inactive
-	product.isActive = false;
-	await product.save();
+	await product.deleteOne();
+
+	io.emit("product-deleted", product.id);
 
 	res.status(200).json({
 		success: true,
-		message: "Product deleted successfully",
+		message: "Product deleted permanently",
 	});
 });
 
@@ -107,6 +109,7 @@ export const updateProductStock = asyncHandler(async (req: Request, res: Respons
 		throw new AppError("Product not found", 404);
 	}
 
+	io.emit("inventory-updated", product);
 	res.status(200).json(product);
 });
 

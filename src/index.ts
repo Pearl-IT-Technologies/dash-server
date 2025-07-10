@@ -90,18 +90,15 @@ app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
 
 // Serve static frontend only in production
-if (process.env.NODE_ENV === "production") {
-	console.log("Setting up static file serving from:", path.join(__dirname, "public"));
-	app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public")));
 
-	// React router support
-	app.get("*", (req, res) => {
-		console.log("Serving index.html for:", req.path);
-		const indexPath = path.join(__dirname, "public", "index.html");
-		console.log("Index path:", indexPath);
-		res.sendFile(indexPath);
-	});
-}
+// React router support
+app.get("*", (req, res) => {
+	console.log("Serving index.html for:", req.path);
+	const indexPath = path.join(__dirname, "public", "index.html");
+	console.log("Index path:", indexPath);
+	res.sendFile(indexPath);
+});
 
 // Socket.IO for real-time features
 initSocket(io);
