@@ -21,7 +21,17 @@ import { verifyTransporter } from "./config/email";
 
 const app = express();
 const server = createServer(app);
-export const io = new Server(server);
+
+// ✅ This allows cross-origin requests
+export const io = new Server(server, {
+	cors: {
+		origin: [`${process.env.CLIENT_URL || "https://dash-client.fly.dev"}`, "https://dash-ng-shop-client.vercel.app/"],
+		methods: ["GET", "POST"],
+	},
+	transports: ["websocket"],
+	pingInterval: 10000, // send ping every 10 seconds
+	pingTimeout: 5000, // disconnect if no pong in 5 seconds
+});
 
 const PORT = Number(process.env.PORT) || 5000;
 

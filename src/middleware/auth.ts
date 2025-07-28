@@ -25,14 +25,13 @@ interface JwtPayload {
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
 
 export const protect = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-	console.log("Protect middleware triggered");
 	// 1) Getting token and check if it's there
 	let token;
 
 	if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
 		token = req.headers.authorization.split(" ")[1];
 	} else if (req.cookies?.token) {
-		token = req.cookies.token;
+    token = req.cookies.token;
 	}
 
 	if (!token) {
@@ -43,7 +42,7 @@ export const protect = asyncHandler(async (req: Request, res: Response, next: Ne
 	const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
 
 	// 3) Check if user still exists
-	const currentUser = await User.findById(decoded.userId);
+  const currentUser = await User.findById(decoded.userId);
 	if (!currentUser) {
 		throw new AppError("The user belonging to this token does no longer exist.", 401);
 	}
