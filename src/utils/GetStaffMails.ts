@@ -1,4 +1,4 @@
-import User from "@/models/User";
+import User from "../models/User";
 
 // Get staff emails for notifications
 export const getStaffMails = async (roles: string[]) : Promise<string[]> => {

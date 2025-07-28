@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { Receiving } from "../models/Receiving";
-import { asyncHandler } from "@/utils/asyncHandler";
-import Product from "@/models/Product";
+import { asyncHandler } from "../utils/asyncHandler";
+import Product from "../models/Product";
 import { io } from "../index";
 
 // @desc    Record new stock received

@@ -1,4 +1,4 @@
-import { IUser } from "@/models/User";
+import { IUser } from "../models/User";
 import * as jwt from "jsonwebtoken";
 import { Response } from "express";
 

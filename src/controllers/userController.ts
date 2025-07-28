@@ -3,7 +3,7 @@ import { AppError } from "../utils/AppError";
 import { asyncHandler } from "../utils/asyncHandler";
 import User from "../models/User";
 import Product from "../models/Product";
-import { LoginHistory } from "@/models/LoginHistory";
+import { LoginHistory } from "../models/LoginHistory";
 
 // @desc    Get current logged in user
 // @route   GET /api/auth/me

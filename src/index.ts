@@ -18,18 +18,12 @@ import userRoutes from "./routes/users";
 import uploadRoutes from "./routes/upload";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
-import path from "path";
 
 const app = express();
 const server = createServer(app);
-export const io = new Server(server, {
-	cors: {
-		origin: process.env.CLIENT_URL || "http://localhost:3000",
-		methods: ["GET", "POST"],
-	},
-});
+export const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 5000;
 
 // Security middleware
 app.use(
@@ -60,11 +54,7 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS configuration
-app.use(
-	cors({
-		origin: process.env.CLIENT_URL || "http://localhost:3000",
-	}),
-);
+app.use(cors());
 
 // Compression middleware
 app.use(compression());
@@ -89,17 +79,6 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
 
-// Serve static frontend only in production
-app.use(express.static(path.join(__dirname, "public")));
-
-// React router support
-app.get("*", (req, res) => {
-	console.log("Serving index.html for:", req.path);
-	const indexPath = path.join(__dirname, "public", "index.html");
-	console.log("Index path:", indexPath);
-	res.sendFile(indexPath);
-});
-
 // Socket.IO for real-time features
 initSocket(io);
 
@@ -113,10 +92,9 @@ const startServer = async () => {
 		await verifyTransporter();
 		console.log("✅ Database connected successfully");
 
-		server.listen(PORT, () => {
+		server.listen(PORT, "0.0.0.0", () => {
 			console.log(`🚀 Server running on port ${PORT}`);
 			console.log(`📱 Environment: ${process.env.NODE_ENV || "development"}`);
-			console.log(`🌐 CORS enabled for: ${process.env.CLIENT_URL || "http://localhost:3000"}`);
 		});
 	} catch (error) {
 		console.error("❌ Failed to start server:", error);

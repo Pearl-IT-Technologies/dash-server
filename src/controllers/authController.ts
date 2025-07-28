@@ -2,10 +2,10 @@ import { Request, Response } from "express";
 import User from "../models/User";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
-import { loginAlertMail, welcomeMail } from "@/services/emailService";
-import { LoginHistory } from "@/models/LoginHistory";
-import { getRealClientIp } from "@/utils/GetIp";
-import { sendTokenResponse } from "@/utils/JWTHelper";
+import { loginAlertMail, welcomeMail } from "../services/emailService";
+import { LoginHistory } from "../models/LoginHistory";
+import { getRealClientIp } from "../utils/GetIp";
+import { sendTokenResponse } from "../utils/JWTHelper";
 
 
 // @desc    Register user

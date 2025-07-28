@@ -6,8 +6,8 @@ import { AppError } from "../utils/AppError";
 import { io } from "../index";
 import crypto from "crypto";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
-import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "@/services/emailService";
-import { getStaffMails } from "@/utils/GetStaffMails";
+import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
+import { getStaffMails } from "../utils/GetStaffMails";
 
 // @desc    Get all orders
 // @route   GET /api/orders

@@ -1,5 +1,5 @@
-import { transporter } from "@/config/email";
-import { emailTemplate } from "@/utils/emailTemplate";
+import { transporter } from "../config/email";
+import { emailTemplate } from "../utils/emailTemplate";
 
 const sendMail = (mailData: any) => {
 	return new Promise((resolve, reject) => {

@@ -10,7 +10,7 @@ import {
   getProductCategories
 } from '../controllers/productController'
 import { protect, restrictTo } from '../middleware/auth'
-import { getRecentReceiving, recordReceiving } from '@/controllers/receivingController'
+import { getRecentReceiving, recordReceiving } from '../controllers/receivingController'
 
 const router = express.Router()
 
