@@ -25,7 +25,10 @@ const server = createServer(app);
 // ✅ This allows cross-origin requests
 export const io = new Server(server, {
 	cors: {
-		origin: [`${process.env.CLIENT_URL || "https://dash-client.fly.dev"}`, "https://dash-ng-shop-client.vercel.app/"],
+		origin: [
+			`${process.env.CLIENT_URL || "https://dash-client.fly.dev"}`,
+			"https://dash-ng-shop-client.vercel.app/",
+		],
 		methods: ["GET", "POST"],
 	},
 	transports: ["websocket"],
@@ -59,6 +62,9 @@ const limiter = rateLimit({
 	message: "Too many requests from this IP, please try again later.",
 	standardHeaders: true,
 	legacyHeaders: false,
+	skip: (req) => {
+		return req.method === "GET";
+	},
 });
 
 app.use(limiter);
