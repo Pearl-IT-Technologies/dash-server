@@ -455,7 +455,7 @@ export async function lowProductAlert(productDetails: any) {
 
 		let mailOptions = {
 			from: `Dash <${process.env.SMTP_USER}>`,
-			to: "beyndtech@gmail.com",
+			to: "storekeeper@dashshops.com",
 			subject: `Low Stock: ${productName}`,
 			html: emailTemplate(bodyContent),
 		};
@@ -480,7 +480,7 @@ export async function adminTransactionAlert(userEmail: string, amount: number, c
 
 		let mailOptions = {
 			from: `Dash <${process.env.SMTP_USER}>`,
-			to: "beyndtech@gmail.com",
+			to: `${process.env.SMTP_USER}`, // Admin email
 			subject: "Transaction Approval Required",
 			html: emailTemplate(bodyContent),
 		};

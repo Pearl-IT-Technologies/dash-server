@@ -157,10 +157,9 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		io.emit("inventory-updated", product); // Emit inventory update
 	}
 
-	// Calculate shipping and tax
-	const shipping = subtotal > 50000 ? 0 : 2500;
-	const tax = subtotal * 0.075; // 7.5% VAT
-	const total = subtotal + shipping + tax;
+	// Calculate shipping
+	const shipping = subtotal > 50000 ? 0 : 0;
+	const total = subtotal + shipping;
 
 	// Generate order number
 	const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -171,7 +170,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		items: orderItems,
 		subtotal,
 		shipping,
-		tax,
+		tax: 0, // Assuming no tax for simplicity, can be added later
 		total,
 		shippingAddress,
 		billingAddress: billingAddress || shippingAddress,

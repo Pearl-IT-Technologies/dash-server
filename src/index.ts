@@ -26,8 +26,8 @@ const server = createServer(app);
 export const io = new Server(server, {
 	cors: {
 		origin: [
-			`${process.env.CLIENT_URL || "https://dash-client.fly.dev"}`,
-			"https://dash-ng-shop-client.vercel.app/",
+			`${process.env.CLIENT_URL || "http://www.dashshops.com"}`,
+			"https://dash-ng-shop-client.vercel.app"
 		],
 		methods: ["GET", "POST"],
 	},

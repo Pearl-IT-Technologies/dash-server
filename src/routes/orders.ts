@@ -26,8 +26,8 @@ router.get("/:id", getOrder);
 router.patch("/:id/cancel", cancelOrder);
 
 // Admin/Staff routes
-router.get("/", restrictTo("admin", "storekeeper", "salesperson"), getOrders);
-router.patch("/:id", restrictTo("admin", "storekeeper", "salesperson"), updateOrder);
-router.patch("/:id/status", restrictTo("admin", "storekeeper", "salesperson"), updateOrderStatus);
+router.get("/", restrictTo("admin", "storekeeper", "salesrep"), getOrders);
+router.patch("/:id", restrictTo("admin", "storekeeper", "salesrep"), updateOrder);
+router.patch("/:id/status", restrictTo("admin", "storekeeper", "salesrep"), updateOrderStatus);
 
 export default router;

@@ -74,8 +74,6 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
 	if (!product) {
 		throw new AppError("Product not found", 404);
   }
-  
-  console.log("deleting")
 
 	await product.deleteOne();
 
