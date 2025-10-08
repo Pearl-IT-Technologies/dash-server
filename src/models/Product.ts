@@ -3,8 +3,8 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IProduct extends Document {
 	name: string;
 	description: string;
-	price: number;
-	originalPrice?: number;
+	price: number; // Price in USD (base currency)
+	originalPrice?: number; // Original price in USD (for discounts)
 	images: string[];
 	category: string;
 	subcategory: string;

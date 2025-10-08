@@ -16,6 +16,7 @@ import productRoutes from "./routes/products";
 import orderRoutes from "./routes/orders";
 import userRoutes from "./routes/users";
 import uploadRoutes from "./routes/upload";
+import settingsRoutes from "./routes/settings";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
 
@@ -27,7 +28,7 @@ export const io = new Server(server, {
 	cors: {
 		origin: [
 			`${process.env.CLIENT_URL || "http://www.dashshops.com"}`,
-			"https://dash-ng-shop-client.vercel.app"
+			"https://dash-ng-shop-client.vercel.app",
 		],
 		methods: ["GET", "POST"],
 	},
@@ -94,6 +95,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/settings", settingsRoutes);
 
 // Socket.IO for real-time features
 initSocket(io);
@@ -135,3 +137,4 @@ process.on("SIGINT", () => {
 
 startServer();
 export default app;
+

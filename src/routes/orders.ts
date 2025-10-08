@@ -1,4 +1,3 @@
-// routes/orders.ts
 import express from "express";
 import {
 	getOrders,
@@ -9,10 +8,14 @@ import {
 	cancelOrder,
 	verifyPayment,
   updateOrder,
+  trackOrderPublic,
 } from "../controllers/orderController";
 import { protect, restrictTo } from "../middleware/auth";
 
 const router = express.Router();
+
+// Public routes (no auth required)
+router.get("/track/:orderNumber", trackOrderPublic);
 
 router.post("/", createOrder);
 router.post("/verify-payment", verifyPayment);

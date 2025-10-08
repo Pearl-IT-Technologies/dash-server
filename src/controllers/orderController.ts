@@ -8,14 +8,16 @@ import crypto from "crypto";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
 import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
 import { getStaffMails } from "../utils/GetStaffMails";
+import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
 
 // @desc    Get all orders
 // @route   GET /api/orders
 // @access  Private (Admin/Staff)
 export const getOrders = asyncHandler(async (req: Request, res: Response) => {
 	const orders = await Order.find();
-
-	res.status(200).json(orders);
+	const convertedOrders = await convertOrdersPrices(orders);
+	
+	res.status(200).json(convertedOrders);
 });
 
 // @desc    Get user orders
@@ -26,7 +28,8 @@ export const getMyOrders = asyncHandler(async (req: Request, res: Response) => {
 		.populate("items.product", "name images")
 		.sort({ createdAt: -1 });
 
-	res.status(200).json(orders);
+	const convertedOrders = await convertOrdersPrices(orders);
+	res.status(200).json(convertedOrders);
 });
 
 // @desc    Get single order
@@ -48,7 +51,8 @@ export const getOrder = asyncHandler(async (req: Request, res: Response) => {
 		throw new AppError("Order not found", 404);
 	}
 
-	res.status(200).json(order);
+	const convertedOrder = await convertOrderPrices(order);
+	res.status(200).json(convertedOrder);
 });
 
 // @desc    Verify Paystack payment
@@ -154,11 +158,12 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		}
 		await product.save();
 
-		io.emit("inventory-updated", product); // Emit inventory update
+		// Emit real-time product update
+		io.emit("inventory-updated", product);
 	}
 
-	// Calculate shipping
-	const shipping = subtotal > 50000 ? 0 : 0;
+	// Calculate shipping (free shipping for orders over $30 USD)
+	const shipping = subtotal > 30 ? 0 : 5; // $5 shipping fee
 	const total = subtotal + shipping;
 
 	// Generate order number
@@ -223,10 +228,72 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		});
 	}
 
-	res.status(201).json(order);
+	const convertedOrder = await convertOrderPrices(order);
+	res.status(201).json(convertedOrder);
 });
 
-// Add this to your orderController.ts
+// @desc    Track order publicly (no auth required)
+// @route   GET /api/orders/track/:orderNumber
+// @access  Public
+export const trackOrderPublic = asyncHandler(async (req: Request, res: Response) => {
+	const { orderNumber } = req.params;
+	
+	if (!orderNumber || orderNumber.trim() === '') {
+		throw new AppError("Order number is required", 400);
+	}
+
+	// Find order by order number (case-insensitive)
+	const order = await Order.findOne({ 
+		orderNumber: { $regex: new RegExp(`^${orderNumber.trim()}$`, 'i') }
+	}).populate("items.product", "name images");
+
+	if (!order) {
+		throw new AppError("Order not found", 404);
+	}
+
+	// Get exchange rate for currency conversion
+	const rate = await getExchangeRate();
+
+	// Return limited public information with currency conversion
+	const publicOrderInfo = {
+		orderNumber: order.orderNumber,
+		status: order.status,
+		paymentStatus: order.paymentStatus,
+		trackingNumber: order.trackingNumber,
+		estimatedDelivery: order.estimatedDelivery,
+		deliveredAt: order.deliveredAt,
+		createdAt: order.createdAt,
+		totalUSD: order.total,
+		totalNGN: Math.round(order.total * rate),
+		total: Math.round(order.total * rate), // For compatibility
+		itemCount: order.items.length,
+		currency: {
+			usdToNgnRate: rate,
+			lastUpdated: new Date()
+		},
+		// Shipping address (city and state only for privacy)
+		shippingLocation: {
+			city: order.shippingAddress.city,
+			state: order.shippingAddress.state,
+			country: order.shippingAddress.country
+		},
+		// Basic item info (no personal details)
+		items: order.items.map((item: any) => ({
+			name: item.name,
+			quantity: item.quantity,
+			priceUSD: item.price,
+			priceNGN: Math.round(item.price * rate),
+			price: Math.round(item.price * rate), // For compatibility
+			image: item.image
+		}))
+	};
+
+	res.status(200).json({
+		success: true,
+		data: publicOrderInfo
+	});
+});
+
 // @desc    Update order
 // @route   PATCH /api/orders/:id
 // @access  Private (Admin/Staff)
@@ -269,7 +336,8 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 	// Emit real-time update
 	io.emit("order-updated", order);
 
-	res.status(200).json(order);
+	const convertedOrder = await convertOrderPrices(order);
+	res.status(200).json(convertedOrder);
 });
 
 // @desc    Update order status
@@ -301,7 +369,8 @@ export const updateOrderStatus = asyncHandler(async (req: Request, res: Response
 		status: order.status,
 	});
 
-	res.status(200).json(order);
+	const convertedOrder = await convertOrderPrices(order);
+	res.status(200).json(convertedOrder);
 });
 
 // @desc    Cancel order
@@ -348,5 +417,6 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 		status: order.status,
 	});
 
-	res.status(200).json(order);
+	const convertedOrder = await convertOrderPrices(order);
+	res.status(200).json(convertedOrder);
 });

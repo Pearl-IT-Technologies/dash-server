@@ -1,4 +1,3 @@
-// routes/upload.ts
 import express from "express";
 import multer from "multer";
 import { uploadImage, deleteImage } from "../controllers/uploadController";

@@ -1,4 +1,3 @@
-// routes/products.ts
 import express from 'express'
 import {
   getProducts,

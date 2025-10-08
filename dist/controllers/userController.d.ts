@@ -1,0 +1,21 @@
+import { Request, Response } from "express";
+export declare const getMe: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const updateDetails: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const changePassword: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const updatePreferences: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const deleteAccount: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const updateAvatar: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getWishlist: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const toggleWishlist: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const clearWishlist: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const syncWishlist: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getAllUsers: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getUserById: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const createUser: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const updateUserById: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const deleteUserById: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getUserStats: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const bulkUpdateUsers: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const searchUsers: (req: Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getLoginHistory: (req: Request, res: Response, next: import("express").NextFunction) => void;
+//# sourceMappingURL=userController.d.ts.map

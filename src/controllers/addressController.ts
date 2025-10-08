@@ -7,7 +7,6 @@ import { Request, Response } from 'express';
 // @route   GET /api/auth/addresses
 // @access  Private
 export const getAddresses = asyncHandler(async (req: Request, res: Response) => {
-  console.log(req.user)
   const user = await User.findById(req.user?.id).select('addresses');
   
   if (!user) {

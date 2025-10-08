@@ -4,7 +4,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IOrderItem {
 	product: mongoose.Types.ObjectId;
 	name: string;
-	price: number;
+	price: number; // Price in USD (will be converted to NGN for display)
 	quantity: number;
 	size: string;
 	color: string;
@@ -27,10 +27,10 @@ export interface IOrder extends Document {
 	orderNumber: string;
 	user?: mongoose.Types.ObjectId;
 	items: IOrderItem[];
-	subtotal: number;
-	shipping: number;
-	tax: number;
-	total: number;
+	subtotal: number; // Subtotal in USD
+	shipping: number; // Shipping in USD
+	tax: number; // Tax in USD
+	total: number; // Total in USD
 	status: "pending" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded";
 	paymentStatus: "pending" | "paid" | "failed" | "refunded";
 	paymentMethod: string;

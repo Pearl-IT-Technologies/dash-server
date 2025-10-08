@@ -4,13 +4,16 @@ import Product from "../models/Product";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
 import { io } from "../index";
+import { convertProductsPrices, convertProductPrices } from "../utils/currencyHelper";
 
 // @desc    Get all products
 // @route   GET /api/products
 // @access  Public
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
-	const products = await Product.find();
-	res.status(200).json(products);
+	const products = await Product.find({ isActive: true });
+	const convertedProducts = await convertProductsPrices(products);
+	
+	res.status(200).json(convertedProducts);
 });
 
 // @desc    Get single product
@@ -26,7 +29,8 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 		throw new AppError("Product not found", 404);
 	}
 
-	res.status(200).json(product);
+	const convertedProduct = await convertProductPrices(product);
+	res.status(200).json(convertedProduct);
 });
 
 // @desc    Get all products for admin (includes inactive)
@@ -34,7 +38,9 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 // @access  Private (Admin/Staff)
 export const getAdminProducts = asyncHandler(async (req: Request, res: Response) => {
 	const products = await Product.find();
-	res.status(200).json(products);
+	const convertedProducts = await convertProductsPrices(products);
+	
+	res.status(200).json(convertedProducts);
 });
 
 // @desc    Create product
@@ -42,10 +48,11 @@ export const getAdminProducts = asyncHandler(async (req: Request, res: Response)
 // @access  Private (Admin/Staff)
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
 	const product = await Product.create(req.body);
+	const convertedProduct = await convertProductPrices(product);
 
 	// Emit real-time update
-	io.emit("product-created", product);
-	res.status(201).json(product);
+	io.emit("product-created", convertedProduct);
+	res.status(201).json(convertedProduct);
 });
 
 // @desc    Update product
@@ -61,8 +68,9 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 		throw new AppError("Product not found", 404);
 	}
 
-	io.emit("inventory-updated", product);
-	res.status(200).json(product);
+	const convertedProduct = await convertProductPrices(product);
+	io.emit("inventory-updated", convertedProduct);
+	res.status(200).json(convertedProduct);
 });
 
 // @desc    Delete product permanently
@@ -107,8 +115,9 @@ export const updateProductStock = asyncHandler(async (req: Request, res: Respons
 		throw new AppError("Product not found", 404);
 	}
 
-	io.emit("inventory-updated", product);
-	res.status(200).json(product);
+	const convertedProduct = await convertProductPrices(product);
+	io.emit("inventory-updated", convertedProduct);
+	res.status(200).json(convertedProduct);
 });
 
 // @desc    Get all unique categories
