@@ -9,7 +9,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
  */
 export async function getExchangeRate(): Promise<number> {
 	// Check if we have a valid cached rate
-	if (cachedRate && (Date.now() - cachedRate.lastFetched.getTime()) < CACHE_DURATION) {
+	if (cachedRate && Date.now() - cachedRate.lastFetched.getTime() < CACHE_DURATION) {
 		return cachedRate.rate;
 	}
 
@@ -21,12 +21,12 @@ export async function getExchangeRate(): Promise<number> {
 		// Update cache
 		cachedRate = {
 			rate,
-			lastFetched: new Date()
+			lastFetched: new Date(),
 		};
 
 		return rate;
 	} catch (error) {
-		console.error('Error fetching exchange rate:', error);
+		console.error("Error fetching exchange rate:", error);
 		// Return cached rate if available, otherwise default
 		return cachedRate?.rate || 1650;
 	}
@@ -39,16 +39,16 @@ export async function convertProductPrices(product: any) {
 	if (!product) return product;
 
 	const rate = await getExchangeRate();
-	
+
 	return {
-		...product.toObject ? product.toObject() : product,
+		...(product.toJSON ? product.toJSON() : product),
 		priceUSD: product.price, // Original USD price
 		priceNGN: Math.round(product.price * rate), // Converted NGN price
 		price: Math.round(product.price * rate), // Keep as NGN for compatibility
 		currency: {
 			usdToNgnRate: rate,
-			lastUpdated: cachedRate?.lastFetched || new Date()
-		}
+			lastUpdated: cachedRate?.lastFetched || new Date(),
+		},
 	};
 }
 
@@ -61,15 +61,15 @@ export async function convertProductsPrices(products: any[]) {
 	const rate = await getExchangeRate();
 	const currencyInfo = {
 		usdToNgnRate: rate,
-		lastUpdated: cachedRate?.lastFetched || new Date()
+		lastUpdated: cachedRate?.lastFetched || new Date(),
 	};
 
-	return products.map(product => ({
-		...product.toObject ? product.toObject() : product,
+	return products.map((product) => ({
+		...(product.toJSON ? product.toJSON() : product),
 		priceUSD: product.price, // Original USD price
 		priceNGN: Math.round(product.price * rate), // Converted NGN price
 		price: Math.round(product.price * rate), // Keep as NGN for compatibility
-		currency: currencyInfo
+		currency: currencyInfo,
 	}));
 }
 
@@ -82,11 +82,11 @@ export async function convertOrderPrices(order: any) {
 	const rate = await getExchangeRate();
 	const currencyInfo = {
 		usdToNgnRate: rate,
-		lastUpdated: cachedRate?.lastFetched || new Date()
+		lastUpdated: cachedRate?.lastFetched || new Date(),
 	};
 
 	const convertedOrder = {
-		...order.toObject ? order.toObject() : order,
+		...(order.toJSON ? order.toJSON() : order),
 		// Convert main totals
 		subtotalUSD: order.subtotal,
 		subtotalNGN: Math.round(order.subtotal * rate),
@@ -103,12 +103,13 @@ export async function convertOrderPrices(order: any) {
 		currency: currencyInfo,
 
 		// Convert item prices
-		items: order.items?.map((item: any) => ({
-			...item,
-			priceUSD: item.price,
-			priceNGN: Math.round(item.price * rate),
-			price: Math.round(item.price * rate), // For compatibility
-		})) || []
+		items:
+			order.items?.map((item: any) => ({
+				...item,
+				priceUSD: item.price,
+				priceNGN: Math.round(item.price * rate),
+				price: Math.round(item.price * rate), // For compatibility
+			})) || [],
 	};
 
 	return convertedOrder;
@@ -123,11 +124,11 @@ export async function convertOrdersPrices(orders: any[]) {
 	const rate = await getExchangeRate();
 	const currencyInfo = {
 		usdToNgnRate: rate,
-		lastUpdated: cachedRate?.lastFetched || new Date()
+		lastUpdated: cachedRate?.lastFetched || new Date(),
 	};
 
-	return orders.map(order => ({
-		...order.toObject ? order.toObject() : order,
+	return orders.map((order) => ({
+		...(order.toJSON ? order.toJSON() : order),
 		// Convert main totals
 		subtotalUSD: order.subtotal,
 		subtotalNGN: Math.round(order.subtotal * rate),
@@ -144,12 +145,13 @@ export async function convertOrdersPrices(orders: any[]) {
 		currency: currencyInfo,
 
 		// Convert item prices
-		items: order.items?.map((item: any) => ({
-			...item,
-			priceUSD: item.price,
-			priceNGN: Math.round(item.price * rate),
-			price: Math.round(item.price * rate),
-		})) || []
+		items:
+			order.items?.map((item: any) => ({
+				...item,
+				priceUSD: item.price,
+				priceNGN: Math.round(item.price * rate),
+				price: Math.round(item.price * rate),
+			})) || [],
 	}));
 }
 

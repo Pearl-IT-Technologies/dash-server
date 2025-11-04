@@ -20,8 +20,13 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
 // @route   GET /api/products/:id
 // @access  Public
 export const getProduct = asyncHandler(async (req: Request, res: Response) => {
+	const { id } = req.params;
+	if (!id) {
+		throw new AppError("Invalid product ID", 400);
+	}
+
 	const product = await Product.findOne({
-		_id: req.params.id,
+		_id: id,
 		isActive: true,
 	});
 
@@ -33,15 +38,6 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 	res.status(200).json(convertedProduct);
 });
 
-// @desc    Get all products for admin (includes inactive)
-// @route   GET /api/admin/products
-// @access  Private (Admin/Staff)
-export const getAdminProducts = asyncHandler(async (req: Request, res: Response) => {
-	const products = await Product.find();
-	const convertedProducts = await convertProductsPrices(products);
-	
-	res.status(200).json(convertedProducts);
-});
 
 // @desc    Create product
 // @route   POST /api/products
@@ -59,7 +55,12 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
 // @route   PUT /api/products/:id
 // @access  Private (Admin/Staff)
 export const updateProduct = asyncHandler(async (req: Request, res: Response) => {
-	const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
+	const { id } = req.params;
+	if (!id) {
+		throw new AppError("Invalid product ID", 400);
+	}
+
+	const product = await Product.findByIdAndUpdate(id, req.body, {
 		new: true,
 		runValidators: true,
 	});
@@ -77,7 +78,12 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 // @route   DELETE /api/products/:id
 // @access  Private (Admin)
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
-	const product = await Product.findById(req.params.id);
+	const { id } = req.params;
+	if (!id) {
+		throw new AppError("Invalid product ID", 400);
+	}
+
+	const product = await Product.findById(id);
 
 	if (!product) {
 		throw new AppError("Product not found", 404);
@@ -97,10 +103,15 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
 // @route   PATCH /api/products/:id/stock
 // @access  Private (Admin/Staff)
 export const updateProductStock = asyncHandler(async (req: Request, res: Response) => {
+	const { id } = req.params;
+	if (!id) {
+		throw new AppError("Invalid product ID", 400);
+	}
+
 	const { stockCount } = req.body;
 
 	const product = await Product.findByIdAndUpdate(
-		req.params.id,
+		id,
 		{
 			stockCount,
 			inStock: stockCount > 0,
