@@ -33,7 +33,13 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 	// Update last login
 	user.lastLogin = new Date();
   await user.save();
-  await welcomeMail(user.email);
+  // Send welcome mail asynchronously so signup response is not blocked by SMTP latency.
+  void welcomeMail(user.email).catch((error) => {
+		console.error(
+			`Failed to send welcome email to ${user.email}`,
+			error instanceof Error ? error.message : error,
+		);
+	});
 
 	sendTokenResponse(user, 201, res);
 });
@@ -81,7 +87,13 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 	// Update last login
 	user.lastLogin = new Date();
   await user.save();
-  await loginAlertMail(user.email, ip);
+  // Send login alert asynchronously so login response is not blocked by SMTP latency.
+  void loginAlertMail(user.email, ip).catch((error) => {
+		console.error(
+			`Failed to send login alert email to ${user.email}`,
+			error instanceof Error ? error.message : error,
+		);
+	});
 
 	sendTokenResponse(user, 200, res);
 });
@@ -121,7 +133,13 @@ export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Re
 	user.resetPasswordOtpSentAt = new Date(now);
 	await user.save({ validateBeforeSave: false });
 
-	await passwordResetOtpMail(user.email, otpCode);
+	// Send mail asynchronously so API response is not blocked by SMTP latency.
+	void passwordResetOtpMail(user.email, otpCode).catch((error) => {
+		console.error(
+			`Failed to send password reset OTP email to ${user.email}`,
+			error instanceof Error ? error.message : error,
+		);
+	});
 
 	res.status(200).json({
 		success: true,

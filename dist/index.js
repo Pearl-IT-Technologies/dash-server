@@ -25,6 +25,7 @@ const socket_1 = require("./utils/socket");
 const email_1 = require("./config/email");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
+app.set("trust proxy", 1);
 exports.io = new socket_io_1.Server(server, {
     cors: {
         origin: [

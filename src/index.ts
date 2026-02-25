@@ -23,6 +23,9 @@ import { verifyTransporter } from "./config/email";
 const app = express();
 const server = createServer(app);
 
+// Trust Fly.io proxy headers (X-Forwarded-For, etc.) for correct rate limiting/IP handling.
+app.set("trust proxy", 1);
+
 // ✅ This allows cross-origin requests
 export const io = new Server(server, {
 	cors: {

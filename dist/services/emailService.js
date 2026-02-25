@@ -30,7 +30,7 @@ const sendMail = (mailData) => {
         });
     });
 };
-const sendMailWithRetry = async (mailData, retries = 3) => {
+const sendMailWithRetry = async (mailData, retries = 2, retryDelayMs = 1000) => {
     for (let i = 0; i < retries; i++) {
         try {
             return await sendMail(mailData);
@@ -38,7 +38,8 @@ const sendMailWithRetry = async (mailData, retries = 3) => {
         catch (error) {
             if (i === retries - 1)
                 throw error;
-            console.log(`Retrying sendMail... Attempt ${i + 1}`);
+            console.warn(`Retrying sendMail... Attempt ${i + 2} of ${retries}`, error instanceof Error ? error.message : error);
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
         }
     }
 };

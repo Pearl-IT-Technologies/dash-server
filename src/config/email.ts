@@ -3,14 +3,15 @@ import nodemailer from "nodemailer";
 export const transporter = nodemailer.createTransport({
   pool: true,
   host: process.env.SMTP_HOST,
-  port: 465,
+  port: Number(process.env.SMTP_PORT) || 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-	secure: true, // Use SSL
-	connectionTimeout: 30000, // 30 seconds
-	socketTimeout: 30000, // 30 seconds
+	secure: (Number(process.env.SMTP_PORT) || 465) === 465, // Use SSL on SMTPS port
+	connectionTimeout: 10000, // 10 seconds
+	greetingTimeout: 10000, // 10 seconds
+	socketTimeout: 10000, // 10 seconds
 });
 
 export const verifyTransporter = async (retries = 3, delay = 5000) => {

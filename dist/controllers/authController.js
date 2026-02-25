@@ -27,7 +27,9 @@ exports.register = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     });
     user.lastLogin = new Date();
     await user.save();
-    await (0, emailService_1.welcomeMail)(user.email);
+    void (0, emailService_1.welcomeMail)(user.email).catch((error) => {
+        console.error(`Failed to send welcome email to ${user.email}`, error instanceof Error ? error.message : error);
+    });
     (0, JWTHelper_1.sendTokenResponse)(user, 201, res);
 });
 exports.login = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -56,7 +58,9 @@ exports.login = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     }
     user.lastLogin = new Date();
     await user.save();
-    await (0, emailService_1.loginAlertMail)(user.email, ip);
+    void (0, emailService_1.loginAlertMail)(user.email, ip).catch((error) => {
+        console.error(`Failed to send login alert email to ${user.email}`, error instanceof Error ? error.message : error);
+    });
     (0, JWTHelper_1.sendTokenResponse)(user, 200, res);
 });
 exports.requestPasswordResetOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -84,7 +88,9 @@ exports.requestPasswordResetOtp = (0, asyncHandler_1.asyncHandler)(async (req, r
     user.resetPasswordOtpAttempts = 0;
     user.resetPasswordOtpSentAt = new Date(now);
     await user.save({ validateBeforeSave: false });
-    await (0, emailService_1.passwordResetOtpMail)(user.email, otpCode);
+    void (0, emailService_1.passwordResetOtpMail)(user.email, otpCode).catch((error) => {
+        console.error(`Failed to send password reset OTP email to ${user.email}`, error instanceof Error ? error.message : error);
+    });
     res.status(200).json({
         success: true,
         message: "Reset code sent to your email",
