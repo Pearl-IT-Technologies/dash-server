@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.welcomeMail = welcomeMail;
 exports.passwordResetMail = passwordResetMail;
+exports.passwordResetOtpMail = passwordResetOtpMail;
 exports.verificationCodeMail = verificationCodeMail;
 exports.orderPlacedMail = orderPlacedMail;
 exports.staffOrderNotificationMail = staffOrderNotificationMail;
@@ -77,6 +78,29 @@ async function passwordResetMail(userEmail, resetToken) {
             from: `Dash <${process.env.SMTP_USER}>`,
             to: userEmail,
             subject: "Password Reset Request",
+            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
+        };
+        return await sendMailWithRetry(mailOptions);
+    }
+    catch (error) {
+        return { error: error instanceof Error && error.message };
+    }
+}
+async function passwordResetOtpMail(userEmail, otpCode) {
+    try {
+        let bodyContent = `
+      <td style="padding: 20px; line-height: 1.8;">
+        <p>Use the code below to reset your password:</p>
+        <h2 style="text-align: center; font-size: 24px;">${otpCode}</h2>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        <p>Best regards,<br />The Dash Team</p>
+      </td>
+    `;
+        let mailOptions = {
+            from: `Dash <${process.env.SMTP_USER}>`,
+            to: userEmail,
+            subject: "Your Dash Password Reset Code",
             html: (0, emailTemplate_1.emailTemplate)(bodyContent),
         };
         return await sendMailWithRetry(mailOptions);

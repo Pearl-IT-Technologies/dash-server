@@ -13,15 +13,18 @@ const crypto_1 = __importDefault(require("crypto"));
 const PaystackVerification_1 = require("../utils/PaystackVerification");
 const emailService_1 = require("../services/emailService");
 const GetStaffMails_1 = require("../utils/GetStaffMails");
+const currencyHelper_1 = require("../utils/currencyHelper");
 exports.getOrders = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const orders = await Order_1.default.find();
-    res.status(200).json(orders);
+    const convertedOrders = await (0, currencyHelper_1.convertOrdersPrices)(orders);
+    res.status(200).json(convertedOrders);
 });
 exports.getMyOrders = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const orders = await Order_1.default.find({ user: req.user?.id })
         .populate("items.product", "name images")
         .sort({ createdAt: -1 });
-    res.status(200).json(orders);
+    const convertedOrders = await (0, currencyHelper_1.convertOrdersPrices)(orders);
+    res.status(200).json(convertedOrders);
 });
 exports.getOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const filter = { _id: req.params.id };
@@ -34,7 +37,8 @@ exports.getOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!order) {
         throw new AppError_1.AppError("Order not found", 404);
     }
-    res.status(200).json(order);
+    const convertedOrder = await (0, currencyHelper_1.convertOrderPrices)(order);
+    res.status(200).json(convertedOrder);
 });
 exports.verifyPayment = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { reference, expectedAmount } = req.body;
@@ -135,22 +139,34 @@ exports.createOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     await order.populate("items.product");
     index_1.io.emit("order-created", order);
     if (order.billingAddress?.email) {
+        const rate = await (0, currencyHelper_1.getExchangeRate)();
+        const itemsWithNgn = order.items.map((item) => ({
+            ...(item.toJSON ? item.toJSON() : item),
+            price: Math.round(item.price * rate),
+        }));
         await (0, emailService_1.orderPlacedMail)(order.billingAddress.email, {
             orderNumber: order.orderNumber,
-            items: order.items,
-            total: order.total,
+            items: itemsWithNgn,
+            total: Math.round(order.total * rate),
             shippingAddress: order.shippingAddress,
             paymentMethod: order.paymentMethod,
         });
     }
-    await (0, emailService_1.staffOrderNotificationMail)(await (0, GetStaffMails_1.getStaffMails)(["admin", "storekeeper"]), {
-        orderNumber: order.orderNumber,
-        items: order.items,
-        total: order.total,
-        shippingAddress: order.shippingAddress,
-        paymentMethod: order.paymentMethod,
-        customerEmail: order.billingAddress?.email,
-    });
+    {
+        const rate = await (0, currencyHelper_1.getExchangeRate)();
+        const itemsWithNgn = order.items.map((item) => ({
+            ...(item.toJSON ? item.toJSON() : item),
+            price: Math.round(item.price * rate),
+        }));
+        await (0, emailService_1.staffOrderNotificationMail)(await (0, GetStaffMails_1.getStaffMails)(["admin", "storekeeper"]), {
+            orderNumber: order.orderNumber,
+            items: itemsWithNgn,
+            total: Math.round(order.total * rate),
+            shippingAddress: order.shippingAddress,
+            paymentMethod: order.paymentMethod,
+            customerEmail: order.billingAddress?.email,
+        });
+    }
     if (lowStocks.length > 0) {
         await (0, emailService_1.stockAlertMail)(await (0, GetStaffMails_1.getStaffMails)(["admin", "storekeeper", "salesrep"]), {
             products: lowStocks,
@@ -163,7 +179,8 @@ exports.createOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             alertType: "out_of_stock",
         });
     }
-    res.status(201).json(order);
+    const convertedOrder = await (0, currencyHelper_1.convertOrderPrices)(order);
+    res.status(201).json(convertedOrder);
 });
 exports.trackOrderPublic = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { orderNumber } = req.params;
@@ -176,6 +193,7 @@ exports.trackOrderPublic = (0, asyncHandler_1.asyncHandler)(async (req, res) => 
     if (!order) {
         throw new AppError_1.AppError("Order not found", 404);
     }
+    const rate = await (0, currencyHelper_1.getExchangeRate)();
     const publicOrderInfo = {
         orderNumber: order.orderNumber,
         status: order.status,
@@ -184,8 +202,14 @@ exports.trackOrderPublic = (0, asyncHandler_1.asyncHandler)(async (req, res) => 
         estimatedDelivery: order.estimatedDelivery,
         deliveredAt: order.deliveredAt,
         createdAt: order.createdAt,
-        total: order.total,
+        totalUSD: order.total,
+        totalNGN: Math.round(order.total * rate),
+        total: Math.round(order.total * rate),
         itemCount: order.items.length,
+        currency: {
+            usdToNgnRate: rate,
+            lastUpdated: new Date()
+        },
         shippingLocation: {
             city: order.shippingAddress.city,
             state: order.shippingAddress.state,
@@ -194,7 +218,9 @@ exports.trackOrderPublic = (0, asyncHandler_1.asyncHandler)(async (req, res) => 
         items: order.items.map((item) => ({
             name: item.name,
             quantity: item.quantity,
-            price: item.price,
+            priceUSD: item.price,
+            priceNGN: Math.round(item.price * rate),
+            price: Math.round(item.price * rate),
             image: item.image
         }))
     };
@@ -233,7 +259,8 @@ exports.updateOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         .populate("user", "firstName lastName email")
         .populate("items.product", "name images");
     index_1.io.emit("order-updated", order);
-    res.status(200).json(order);
+    const convertedOrder = await (0, currencyHelper_1.convertOrderPrices)(order);
+    res.status(200).json(convertedOrder);
 });
 exports.updateOrderStatus = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { status, trackingNumber } = req.body;
@@ -252,7 +279,8 @@ exports.updateOrderStatus = (0, asyncHandler_1.asyncHandler)(async (req, res) =>
         orderId: order._id,
         status: order.status,
     });
-    res.status(200).json(order);
+    const convertedOrder = await (0, currencyHelper_1.convertOrderPrices)(order);
+    res.status(200).json(convertedOrder);
 });
 exports.cancelOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { reason } = req.body;
@@ -283,6 +311,7 @@ exports.cancelOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         orderId: order._id,
         status: order.status,
     });
-    res.status(200).json(order);
+    const convertedOrder = await (0, currencyHelper_1.convertOrderPrices)(order);
+    res.status(200).json(convertedOrder);
 });
 //# sourceMappingURL=orderController.js.map

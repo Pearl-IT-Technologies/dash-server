@@ -165,6 +165,23 @@ const UserSchema = new mongoose_1.Schema({
     lastLogin: {
         type: Date,
     },
+    resetPasswordOtpHash: {
+        type: String,
+        select: false,
+    },
+    resetPasswordOtpExpires: {
+        type: Date,
+        select: false,
+    },
+    resetPasswordOtpAttempts: {
+        type: Number,
+        default: 0,
+        select: false,
+    },
+    resetPasswordOtpSentAt: {
+        type: Date,
+        select: false,
+    },
 }, {
     timestamps: true,
     toJSON: {

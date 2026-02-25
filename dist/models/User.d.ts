@@ -32,6 +32,10 @@ export interface IUser extends Document {
     wishlist: mongoose.Types.ObjectId[];
     isActive: boolean;
     lastLogin?: Date;
+    resetPasswordOtpHash?: string;
+    resetPasswordOtpExpires?: Date;
+    resetPasswordOtpAttempts?: number;
+    resetPasswordOtpSentAt?: Date;
     createdAt: Date;
     updatedAt: Date;
     comparePassword(candidatePassword: string): Promise<boolean>;

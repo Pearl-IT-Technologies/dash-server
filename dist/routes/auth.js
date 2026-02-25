@@ -11,6 +11,8 @@ const addressController_1 = require("../controllers/addressController");
 const router = express_1.default.Router();
 router.post("/register", authController_1.register);
 router.post("/login", authController_1.login);
+router.post("/forgot-password", authController_1.requestPasswordResetOtp);
+router.post("/reset-password", authController_1.resetPasswordWithOtp);
 router.use(auth_1.protect);
 router.get("/me", userController_1.getMe);
 router.get("/logout", authController_1.logout);

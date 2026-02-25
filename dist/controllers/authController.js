@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.logout = exports.updatePassword = exports.login = exports.register = void 0;
+exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.logout = exports.updatePassword = exports.resetPasswordWithOtp = exports.requestPasswordResetOtp = exports.login = exports.register = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const asyncHandler_1 = require("../utils/asyncHandler");
 const AppError_1 = require("../utils/AppError");
@@ -11,6 +11,7 @@ const emailService_1 = require("../services/emailService");
 const LoginHistory_1 = require("../models/LoginHistory");
 const GetIp_1 = require("../utils/GetIp");
 const JWTHelper_1 = require("../utils/JWTHelper");
+const crypto_1 = __importDefault(require("crypto"));
 exports.register = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { firstName, lastName, email, password, username } = req.body;
     const existingUser = await User_1.default.findOne({ email: email.toLowerCase() });
@@ -57,6 +58,72 @@ exports.login = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     await user.save();
     await (0, emailService_1.loginAlertMail)(user.email, ip);
     (0, JWTHelper_1.sendTokenResponse)(user, 200, res);
+});
+exports.requestPasswordResetOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        throw new AppError_1.AppError("Please provide an email address", 400);
+    }
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User_1.default.findOne({ email: normalizedEmail }).select("+resetPasswordOtpSentAt");
+    if (!user) {
+        res.status(200).json({
+            success: true,
+            message: "If an account exists for this email, a reset code has been sent.",
+        });
+        return;
+    }
+    const now = Date.now();
+    if (user.resetPasswordOtpSentAt && now - user.resetPasswordOtpSentAt.getTime() < 60 * 1000) {
+        throw new AppError_1.AppError("Please wait a minute before requesting another code", 429);
+    }
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = crypto_1.default.createHash("sha256").update(otpCode).digest("hex");
+    user.resetPasswordOtpHash = otpHash;
+    user.resetPasswordOtpExpires = new Date(now + 10 * 60 * 1000);
+    user.resetPasswordOtpAttempts = 0;
+    user.resetPasswordOtpSentAt = new Date(now);
+    await user.save({ validateBeforeSave: false });
+    await (0, emailService_1.passwordResetOtpMail)(user.email, otpCode);
+    res.status(200).json({
+        success: true,
+        message: "Reset code sent to your email",
+    });
+    return;
+});
+exports.resetPasswordWithOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+        throw new AppError_1.AppError("Email, OTP, and new password are required", 400);
+    }
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User_1.default.findOne({ email: normalizedEmail }).select("+password +resetPasswordOtpHash +resetPasswordOtpExpires +resetPasswordOtpAttempts");
+    if (!user || !user.resetPasswordOtpHash || !user.resetPasswordOtpExpires) {
+        throw new AppError_1.AppError("Invalid or expired reset code", 400);
+    }
+    if (user.resetPasswordOtpExpires.getTime() < Date.now()) {
+        throw new AppError_1.AppError("Reset code has expired", 400);
+    }
+    if ((user.resetPasswordOtpAttempts || 0) >= 5) {
+        throw new AppError_1.AppError("Too many failed attempts. Request a new code.", 429);
+    }
+    const normalizedOtp = String(otp).trim();
+    const otpHash = crypto_1.default.createHash("sha256").update(normalizedOtp).digest("hex");
+    if (otpHash !== user.resetPasswordOtpHash) {
+        user.resetPasswordOtpAttempts = (user.resetPasswordOtpAttempts || 0) + 1;
+        await user.save({ validateBeforeSave: false });
+        throw new AppError_1.AppError("Invalid reset code", 400);
+    }
+    user.password = newPassword;
+    user.resetPasswordOtpHash = undefined;
+    user.resetPasswordOtpExpires = undefined;
+    user.resetPasswordOtpAttempts = 0;
+    user.resetPasswordOtpSentAt = undefined;
+    await user.save();
+    res.status(200).json({
+        success: true,
+        message: "Password reset successful. You can now log in.",
+    });
 });
 exports.updatePassword = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { currentPassword, newPassword } = req.body;

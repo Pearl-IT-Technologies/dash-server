@@ -100,10 +100,11 @@ export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Re
 	const user = await User.findOne({ email: normalizedEmail }).select("+resetPasswordOtpSentAt");
 
 	if (!user) {
-		return res.status(200).json({
+		res.status(200).json({
 			success: true,
 			message: "If an account exists for this email, a reset code has been sent.",
 		});
+		return;
 	}
 
 	const now = Date.now();
@@ -126,6 +127,7 @@ export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Re
 		success: true,
 		message: "Reset code sent to your email",
 	});
+	return;
 });
 
 // @desc    Reset password with OTP

@@ -1,5 +1,6 @@
 export declare function welcomeMail(userEmail: string): Promise<any>;
 export declare function passwordResetMail(userEmail: string, resetToken: string): Promise<any>;
+export declare function passwordResetOtpMail(userEmail: string, otpCode: string): Promise<any>;
 export declare function verificationCodeMail(userEmail: string, verificationCode: string): Promise<any>;
 export declare function orderPlacedMail(userEmail: string, orderDetails: any): Promise<any>;
 export declare function staffOrderNotificationMail(staffEmails: string | string[], orderDetails: any): Promise<any>;

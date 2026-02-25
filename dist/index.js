@@ -20,7 +20,7 @@ const products_1 = __importDefault(require("./routes/products"));
 const orders_1 = __importDefault(require("./routes/orders"));
 const users_1 = __importDefault(require("./routes/users"));
 const upload_1 = __importDefault(require("./routes/upload"));
-const settingsRoutes_1 = __importDefault(require("./routes/settingsRoutes"));
+const settings_1 = __importDefault(require("./routes/settings"));
 const socket_1 = require("./utils/socket");
 const email_1 = require("./config/email");
 const app = (0, express_1.default)();
@@ -78,7 +78,7 @@ app.use("/api/products", products_1.default);
 app.use("/api/orders", orders_1.default);
 app.use("/api/users", users_1.default);
 app.use("/api/upload", upload_1.default);
-app.use("/api/settings", settingsRoutes_1.default);
+app.use("/api/settings", settings_1.default);
 (0, socket_1.initSocket)(exports.io);
 app.use(errorHandler_1.errorHandler);
 const startServer = async () => {
