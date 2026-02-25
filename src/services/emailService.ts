@@ -76,6 +76,32 @@ export async function passwordResetMail(userEmail: string, resetToken: string) {
 	}
 }
 
+// Password Reset OTP Mail
+export async function passwordResetOtpMail(userEmail: string, otpCode: string) {
+	try {
+		let bodyContent = `
+      <td style="padding: 20px; line-height: 1.8;">
+        <p>Use the code below to reset your password:</p>
+        <h2 style="text-align: center; font-size: 24px;">${otpCode}</h2>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        <p>Best regards,<br />The Dash Team</p>
+      </td>
+    `;
+
+		let mailOptions = {
+			from: `Dash <${process.env.SMTP_USER}>`,
+			to: userEmail,
+			subject: "Your Dash Password Reset Code",
+			html: emailTemplate(bodyContent),
+		};
+
+		return await sendMailWithRetry(mailOptions);
+	} catch (error) {
+		return { error: error instanceof Error && error.message };
+	}
+}
+
 // Verification Code Mail
 export async function verificationCodeMail(userEmail: string, verificationCode: string) {
 	try {

@@ -36,6 +36,10 @@ export interface IUser extends Document {
 	wishlist: mongoose.Types.ObjectId[];
 	isActive: boolean;
 	lastLogin?: Date;
+	resetPasswordOtpHash?: string;
+	resetPasswordOtpExpires?: Date;
+	resetPasswordOtpAttempts?: number;
+	resetPasswordOtpSentAt?: Date;
 	createdAt: Date;
 	updatedAt: Date;
 	comparePassword(candidatePassword: string): Promise<boolean>;
@@ -170,6 +174,23 @@ const UserSchema = new Schema<IUser>(
 		},
 		lastLogin: {
 			type: Date,
+		},
+		resetPasswordOtpHash: {
+			type: String,
+			select: false,
+		},
+		resetPasswordOtpExpires: {
+			type: Date,
+			select: false,
+		},
+		resetPasswordOtpAttempts: {
+			type: Number,
+			default: 0,
+			select: false,
+		},
+		resetPasswordOtpSentAt: {
+			type: Date,
+			select: false,
 		},
 	},
 	{

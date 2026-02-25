@@ -39,12 +39,18 @@ export async function convertProductPrices(product: any) {
 	if (!product) return product;
 
 	const rate = await getExchangeRate();
+	const originalPriceUSD = product.originalPrice;
+	const originalPriceNGN =
+		typeof originalPriceUSD === "number" ? Math.round(originalPriceUSD * rate) : undefined;
 
 	return {
 		...(product.toJSON ? product.toJSON() : product),
 		priceUSD: product.price, // Original USD price
 		priceNGN: Math.round(product.price * rate), // Converted NGN price
 		price: Math.round(product.price * rate), // Keep as NGN for compatibility
+		originalPriceUSD,
+		originalPriceNGN,
+		originalPrice: originalPriceNGN ?? product.originalPrice,
 		currency: {
 			usdToNgnRate: rate,
 			lastUpdated: cachedRate?.lastFetched || new Date(),
@@ -69,6 +75,11 @@ export async function convertProductsPrices(products: any[]) {
 		priceUSD: product.price, // Original USD price
 		priceNGN: Math.round(product.price * rate), // Converted NGN price
 		price: Math.round(product.price * rate), // Keep as NGN for compatibility
+		originalPriceUSD: product.originalPrice,
+		originalPriceNGN:
+			typeof product.originalPrice === "number" ? Math.round(product.originalPrice * rate) : undefined,
+		originalPrice:
+			typeof product.originalPrice === "number" ? Math.round(product.originalPrice * rate) : undefined,
 		currency: currencyInfo,
 	}));
 }

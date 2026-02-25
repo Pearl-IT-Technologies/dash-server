@@ -193,23 +193,37 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
 	// Notify user about new order
 	if (order.billingAddress?.email) {
+		const rate = await getExchangeRate();
+		const itemsWithNgn = order.items.map((item: any) => ({
+			...(item.toJSON ? item.toJSON() : item),
+			price: Math.round(item.price * rate),
+		}));
+
 		await orderPlacedMail(order.billingAddress.email, {
 			orderNumber: order.orderNumber,
-			items: order.items,
-			total: order.total,
+			items: itemsWithNgn,
+			total: Math.round(order.total * rate),
 			shippingAddress: order.shippingAddress,
 			paymentMethod: order.paymentMethod,
 		});
 	}
 
-	await staffOrderNotificationMail(await getStaffMails(["admin", "storekeeper"]), {
-		orderNumber: order.orderNumber,
-		items: order.items,
-		total: order.total,
-		shippingAddress: order.shippingAddress,
-		paymentMethod: order.paymentMethod,
-		customerEmail: order.billingAddress?.email,
-	});
+	{
+		const rate = await getExchangeRate();
+		const itemsWithNgn = order.items.map((item: any) => ({
+			...(item.toJSON ? item.toJSON() : item),
+			price: Math.round(item.price * rate),
+		}));
+
+		await staffOrderNotificationMail(await getStaffMails(["admin", "storekeeper"]), {
+			orderNumber: order.orderNumber,
+			items: itemsWithNgn,
+			total: Math.round(order.total * rate),
+			shippingAddress: order.shippingAddress,
+			paymentMethod: order.paymentMethod,
+			customerEmail: order.billingAddress?.email,
+		});
+	}
 
 	// Send stock alert emails if any products are low on stock
 	if (lowStocks.length > 0) {

@@ -2,10 +2,11 @@ import { Request, Response } from "express";
 import User from "../models/User";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
-import { loginAlertMail, welcomeMail } from "../services/emailService";
+import { loginAlertMail, passwordResetOtpMail, welcomeMail } from "../services/emailService";
 import { LoginHistory } from "../models/LoginHistory";
 import { getRealClientIp } from "../utils/GetIp";
 import { sendTokenResponse } from "../utils/JWTHelper";
+import crypto from "crypto";
 
 
 // @desc    Register user
@@ -83,6 +84,96 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   await loginAlertMail(user.email, ip);
 
 	sendTokenResponse(user, 200, res);
+});
+
+// @desc    Request password reset OTP
+// @route   POST /api/auth/forgot-password
+// @access  Public
+export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Response) => {
+	const { email } = req.body;
+
+	if (!email) {
+		throw new AppError("Please provide an email address", 400);
+	}
+
+	const normalizedEmail = email.toLowerCase().trim();
+	const user = await User.findOne({ email: normalizedEmail }).select("+resetPasswordOtpSentAt");
+
+	if (!user) {
+		return res.status(200).json({
+			success: true,
+			message: "If an account exists for this email, a reset code has been sent.",
+		});
+	}
+
+	const now = Date.now();
+	if (user.resetPasswordOtpSentAt && now - user.resetPasswordOtpSentAt.getTime() < 60 * 1000) {
+		throw new AppError("Please wait a minute before requesting another code", 429);
+	}
+
+	const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+	const otpHash = crypto.createHash("sha256").update(otpCode).digest("hex");
+
+	user.resetPasswordOtpHash = otpHash;
+	user.resetPasswordOtpExpires = new Date(now + 10 * 60 * 1000);
+	user.resetPasswordOtpAttempts = 0;
+	user.resetPasswordOtpSentAt = new Date(now);
+	await user.save({ validateBeforeSave: false });
+
+	await passwordResetOtpMail(user.email, otpCode);
+
+	res.status(200).json({
+		success: true,
+		message: "Reset code sent to your email",
+	});
+});
+
+// @desc    Reset password with OTP
+// @route   POST /api/auth/reset-password
+// @access  Public
+export const resetPasswordWithOtp = asyncHandler(async (req: Request, res: Response) => {
+	const { email, otp, newPassword } = req.body;
+
+	if (!email || !otp || !newPassword) {
+		throw new AppError("Email, OTP, and new password are required", 400);
+	}
+
+	const normalizedEmail = email.toLowerCase().trim();
+	const user = await User.findOne({ email: normalizedEmail }).select(
+		"+password +resetPasswordOtpHash +resetPasswordOtpExpires +resetPasswordOtpAttempts",
+	);
+
+	if (!user || !user.resetPasswordOtpHash || !user.resetPasswordOtpExpires) {
+		throw new AppError("Invalid or expired reset code", 400);
+	}
+
+	if (user.resetPasswordOtpExpires.getTime() < Date.now()) {
+		throw new AppError("Reset code has expired", 400);
+	}
+
+	if ((user.resetPasswordOtpAttempts || 0) >= 5) {
+		throw new AppError("Too many failed attempts. Request a new code.", 429);
+	}
+
+	const normalizedOtp = String(otp).trim();
+	const otpHash = crypto.createHash("sha256").update(normalizedOtp).digest("hex");
+	if (otpHash !== user.resetPasswordOtpHash) {
+		user.resetPasswordOtpAttempts = (user.resetPasswordOtpAttempts || 0) + 1;
+		await user.save({ validateBeforeSave: false });
+		throw new AppError("Invalid reset code", 400);
+	}
+
+	user.password = newPassword;
+	user.resetPasswordOtpHash = undefined;
+	user.resetPasswordOtpExpires = undefined;
+	user.resetPasswordOtpAttempts = 0;
+	user.resetPasswordOtpSentAt = undefined;
+	await user.save();
+
+	res.status(200).json({
+		success: true,
+		message: "Password reset successful. You can now log in.",
+	});
 });
 
 // @desc    Update password

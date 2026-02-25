@@ -3,6 +3,8 @@ import {
 	register,
 	login,
 	logout,
+	requestPasswordResetOtp,
+	resetPasswordWithOtp,
 	updatePassword,
 } from "../controllers/authController";
 import { protect } from "../middleware/auth";
@@ -14,6 +16,8 @@ const router = express.Router();
 // Public routes
 router.post("/register", register);
 router.post("/login", login);
+router.post("/forgot-password", requestPasswordResetOtp);
+router.post("/reset-password", resetPasswordWithOtp);
 
 // Protected routes
 router.use(protect); // All routes after this middleware are protected
