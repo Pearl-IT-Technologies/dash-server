@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.welcomeMail = welcomeMail;
-exports.passwordResetMail = passwordResetMail;
 exports.passwordResetOtpMail = passwordResetOtpMail;
 exports.verificationCodeMail = verificationCodeMail;
 exports.orderPlacedMail = orderPlacedMail;
@@ -16,6 +15,19 @@ exports.adminMail = adminMail;
 exports.loginAlertMail = loginAlertMail;
 const email_1 = require("../config/email");
 const emailTemplate_1 = require("../utils/emailTemplate");
+const fromAddress = () => process.env.EMAIL_FROM || process.env.SMTP_USER || "no-reply@dashshops.com";
+const replyToAddress = () => process.env.EMAIL_FROM || process.env.SMTP_USER;
+const createMailOptions = (to, subject, bodyContent, fromName = "Dash") => {
+    const html = (0, emailTemplate_1.emailTemplate)(bodyContent);
+    return {
+        from: `${fromName} <${fromAddress()}>`,
+        replyTo: replyToAddress(),
+        to,
+        subject,
+        html,
+        text: (0, emailTemplate_1.stripHtmlToText)(bodyContent),
+    };
+};
 const sendMail = (mailData) => {
     return new Promise((resolve, reject) => {
         email_1.transporter.sendMail(mailData, (err, info) => {
@@ -45,42 +57,14 @@ const sendMailWithRetry = async (mailData, retries = 2, retryDelayMs = 1000) => 
 };
 async function welcomeMail(userEmail) {
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Welcome to Dash!</p>
         <p>We're thrilled to have you as part of our community. At Dash, we are dedicated to providing seamless services and support to our users.</p>
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: "Welcome to Dash!",
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
-        return await sendMailWithRetry(mailOptions);
-    }
-    catch (error) {
-        return { error: error instanceof Error && error.message };
-    }
-}
-async function passwordResetMail(userEmail, resetToken) {
-    const resetLink = `https://dashngshop.com/reset-password/${resetToken}`;
-    try {
-        let bodyContent = `
-      <td style="padding: 20px; line-height: 1.8;">
-        <p>A request was sent for a password reset. If this wasn't you, please contact our customer service.</p>
-        <p>Click the reset link below to proceed:</p>
-        <a href="${resetLink}" style="display: inline-block; padding: 15px 30px; border-radius: 30px; background-color: #114000; color: #fafafa; text-decoration: none;">Reset Password</a>
-        <p>Best regards,<br />The Dash Team</p>
-      </td>
-    `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: "Password Reset Request",
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, "Welcome to Dash", bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -89,7 +73,7 @@ async function passwordResetMail(userEmail, resetToken) {
 }
 async function passwordResetOtpMail(userEmail, otpCode) {
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Use the code below to reset your password:</p>
         <h2 style="text-align: center; font-size: 24px;">${otpCode}</h2>
@@ -98,12 +82,7 @@ async function passwordResetOtpMail(userEmail, otpCode) {
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: "Your Dash Password Reset Code",
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, "Your Dash Password Reset Code", bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -112,7 +91,7 @@ async function passwordResetOtpMail(userEmail, otpCode) {
 }
 async function verificationCodeMail(userEmail, verificationCode) {
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Use the code below to complete your registration:</p>
         <h2 style="text-align: center; font-size: 24px;">${verificationCode}</h2>
@@ -121,12 +100,7 @@ async function verificationCodeMail(userEmail, verificationCode) {
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: "Your Dash Verification Code",
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, "Your Dash Verification Code", bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -196,12 +170,7 @@ async function orderPlacedMail(userEmail, orderDetails) {
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: `Order Confirmed - #${orderNumber}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, `Order Confirmed - ${orderNumber}`, bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -227,18 +196,18 @@ async function staffOrderNotificationMail(staffEmails, orderDetails) {
 			</tr>
 		`)
             .join("");
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
-        <h2 style="color: #e74c3c; margin-bottom: 20px;">🚨 New Order Alert</h2>
+        <h2 style="color: #e74c3c; margin-bottom: 20px;">New Order Alert</h2>
         <p>A new order has been placed and requires your attention.</p>
-        
+
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
           <p><strong>Order Number:</strong> #${orderNumber}</p>
           <p><strong>Customer Email:</strong> ${customerEmail}</p>
-          <p><strong>Order Total:</strong> ₦${total.toLocaleString()}</p>
+          <p><strong>Order Total:</strong> NGN ${total.toLocaleString()}</p>
           <p><strong>Payment Method:</strong> ${paymentMethod || "N/A"}</p>
         </div>
-        
+
         <h3 style="margin-top: 24px; margin-bottom: 16px; color: #333;">Order Items:</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
           <thead>
@@ -252,7 +221,7 @@ async function staffOrderNotificationMail(staffEmails, orderDetails) {
             ${itemsHTML}
           </tbody>
         </table>
-        
+
         ${shippingAddress
             ? `
           <h3 style="margin-top: 24px; margin-bottom: 16px; color: #333;">Shipping Address:</h3>
@@ -266,19 +235,22 @@ async function staffOrderNotificationMail(staffEmails, orderDetails) {
           </div>
         `
             : ""}
-        
+
         <p style="margin-top: 24px; color: #e74c3c; font-weight: bold;">
-          ⚠️ Please process this order promptly and check inventory levels.
+          Please process this order promptly and check inventory levels.
         </p>
-        
+
         <p>Best regards,<br />Dash System</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash System <${process.env.SMTP_USER}>`,
+        const html = (0, emailTemplate_1.emailTemplate)(bodyContent);
+        const mailOptions = {
+            from: `Dash System <${fromAddress()}>`,
+            replyTo: replyToAddress(),
             to: emailList.join(", "),
-            subject: `🚨 New Order Alert - #${orderNumber}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
+            subject: `New Order Alert - ${orderNumber}`,
+            html,
+            text: (0, emailTemplate_1.stripHtmlToText)(bodyContent),
         };
         return await sendMailWithRetry(mailOptions);
     }
@@ -292,7 +264,6 @@ async function stockAlertMail(staffEmails, stockDetails) {
         const emailList = Array.isArray(staffEmails) ? staffEmails : [staffEmails];
         const isOutOfStock = alertType === "out_of_stock";
         const alertColor = isOutOfStock ? "#e74c3c" : "#f39c12";
-        const alertIcon = isOutOfStock ? "🚫" : "⚠️";
         const alertTitle = isOutOfStock ? "Products Out of Stock" : "Low Stock Alert";
         const productsHTML = products
             .map((product) => `
@@ -312,11 +283,11 @@ async function stockAlertMail(staffEmails, stockDetails) {
 			</tr>
 		`)
             .join("");
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
-        <h2 style="color: ${alertColor}; margin-bottom: 20px;">${alertIcon} ${alertTitle}</h2>
+        <h2 style="color: ${alertColor}; margin-bottom: 20px;">${alertTitle}</h2>
         <p>The following products require immediate attention:</p>
-        
+
         <div style="background-color: ${isOutOfStock ? "#ffebee" : "#fff8e1"}; padding: 15px; border-radius: 4px; margin: 20px 0; border-left: 4px solid ${alertColor};">
           <p style="margin: 0; font-weight: bold; color: ${alertColor};">
             ${isOutOfStock
@@ -324,7 +295,7 @@ async function stockAlertMail(staffEmails, stockDetails) {
             : `${products.length} product(s) are running low on stock and need restocking soon.`}
           </p>
         </div>
-        
+
         <h3 style="margin-top: 24px; margin-bottom: 16px; color: #333;">Affected Products:</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
           <thead>
@@ -339,7 +310,7 @@ async function stockAlertMail(staffEmails, stockDetails) {
             ${productsHTML}
           </tbody>
         </table>
-        
+
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
           <h3 style="margin-top: 0; color: #333;">Recommended Actions:</h3>
           <ul style="margin: 0; padding-left: 20px;">
@@ -352,19 +323,22 @@ async function stockAlertMail(staffEmails, stockDetails) {
                <li>Monitor sales velocity for these products</li>`}
           </ul>
         </div>
-        
+
         <p style="margin-top: 24px; color: ${alertColor}; font-weight: bold;">
-          ${alertIcon} Please take immediate action to prevent sales disruption.
+          Please take immediate action to prevent sales disruption.
         </p>
-        
+
         <p>Best regards,<br />Dash Inventory System</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash Inventory <${process.env.SMTP_USER}>`,
+        const html = (0, emailTemplate_1.emailTemplate)(bodyContent);
+        const mailOptions = {
+            from: `Dash Inventory <${fromAddress()}>`,
+            replyTo: replyToAddress(),
             to: emailList.join(", "),
-            subject: `${alertIcon} ${alertTitle} - Action Required`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
+            subject: `${alertTitle} - Action Required`,
+            html,
+            text: (0, emailTemplate_1.stripHtmlToText)(bodyContent),
         };
         return await sendMailWithRetry(mailOptions);
     }
@@ -375,7 +349,7 @@ async function stockAlertMail(staffEmails, stockDetails) {
 async function orderConfirmationMail(userEmail, orderDetails) {
     const { orderId, paymentMethod } = orderDetails;
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Payment confirmed for order <strong>#${orderId}</strong>!</p>
         <p><strong>Payment Method:</strong> ${paymentMethod}</p>
@@ -383,12 +357,7 @@ async function orderConfirmationMail(userEmail, orderDetails) {
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: `Payment Confirmed - Order ID: ${orderId}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, `Payment Confirmed - Order ${orderId}`, bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -398,20 +367,15 @@ async function orderConfirmationMail(userEmail, orderDetails) {
 async function newProductMail(userEmail, productDetails) {
     const { productName, productPrice, currency } = productDetails;
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
-        <p>New product alert: <strong>${productName}</strong></p>
+        <p>New product available: <strong>${productName}</strong></p>
         <p><strong>Price: ${productPrice} ${currency}</strong></p>
         <p>Check it out on our website!</p>
         <p>Best regards,<br />The Dash Team</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: `New Product: ${productName}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, `New Product - ${productName}`, bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -421,7 +385,7 @@ async function newProductMail(userEmail, productDetails) {
 async function lowProductAlert(productDetails) {
     const { productName, currentStock, minimumStock } = productDetails;
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <h3 style="color: #d32f2f;">Low Stock Alert</h3>
         <p><strong>Product:</strong> ${productName}</p>
@@ -430,12 +394,7 @@ async function lowProductAlert(productDetails) {
         <p>Please restock this item.</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: "storekeeper@dashshops.com",
-            subject: `Low Stock: ${productName}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions("storekeeper@dashshops.com", `Low Stock - ${productName}`, bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -444,7 +403,7 @@ async function lowProductAlert(productDetails) {
 }
 async function adminTransactionAlert(userEmail, amount, currency) {
     try {
-        let bodyContent = `
+        const bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>A new transaction requires approval.</p>
         <p>User Email: ${userEmail}</p>
@@ -452,12 +411,7 @@ async function adminTransactionAlert(userEmail, amount, currency) {
         <p>Please review and approve or reject the transaction.</p>
       </td>
     `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: `${process.env.SMTP_USER}`,
-            subject: "Transaction Approval Required",
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(process.env.SMTP_USER || fromAddress(), "Transaction Approval Required", bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -466,7 +420,7 @@ async function adminTransactionAlert(userEmail, amount, currency) {
 }
 async function transactionStatusMail(userEmail, type, amount, currency, status) {
     try {
-        let bodyContent = `
+        const bodyContent = `
     <td style="padding: 20px; line-height: 1.8;">
       <p>Dear Customer,</p>
       <p>Your <strong>${type.toLowerCase()}</strong> request for <strong>${amount} ${currency}</strong> has been <strong>${status.toLowerCase()}</strong>.</p>
@@ -474,12 +428,7 @@ async function transactionStatusMail(userEmail, type, amount, currency, status) 
       <p>Best regards,<br />The Dash Team</p>
     </td>
   `;
-        let mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: `${type} ${status}`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, `${type} ${status}`, bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {
@@ -489,11 +438,14 @@ async function transactionStatusMail(userEmail, type, amount, currency, status) 
 async function adminMail(recipients, subject, bodyContent) {
     try {
         const recipientList = Array.isArray(recipients) ? recipients : [recipients];
-        let mailOptions = {
-            from: `Dash Admin <${process.env.SMTP_USER}>`,
+        const html = (0, emailTemplate_1.emailTemplate)(bodyContent);
+        const mailOptions = {
+            from: `Dash Admin <${fromAddress()}>`,
+            replyTo: replyToAddress(),
             to: recipientList.join(","),
             subject,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
+            html,
+            text: (0, emailTemplate_1.stripHtmlToText)(bodyContent),
         };
         return await sendMailWithRetry(mailOptions);
     }
@@ -520,12 +472,7 @@ async function loginAlertMail(userEmail, ipAddress) {
       <p>Best regards,<br />The Dash Team</p>
     </td>
   `;
-        const mailOptions = {
-            from: `Dash <${process.env.SMTP_USER}>`,
-            to: userEmail,
-            subject: `Login Alert - Dash`,
-            html: (0, emailTemplate_1.emailTemplate)(bodyContent),
-        };
+        const mailOptions = createMailOptions(userEmail, "Login Alert - Dash", bodyContent);
         return await sendMailWithRetry(mailOptions);
     }
     catch (error) {

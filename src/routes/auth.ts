@@ -6,8 +6,9 @@ import {
 	requestPasswordResetOtp,
 	resetPasswordWithOtp,
 	updatePassword,
+	debugMailCheck,
 } from "../controllers/authController";
-import { protect } from "../middleware/auth";
+import { protect, restrictTo } from "../middleware/auth";
 import { clearWishlist, getMe, getWishlist, syncWishlist, toggleWishlist, updateAvatar, updateDetails, updatePreferences } from "../controllers/userController";
 import { createAddress, deleteAddress, getAddresses, setDefaultAddress, updateAddress } from "../controllers/addressController";
 
@@ -28,6 +29,7 @@ router.put("/update-avatar", updateAvatar);
 router.put("/updatedetails", updateDetails);
 router.put("/updatepassword", updatePassword);
 router.put("/preferences", updatePreferences);
+router.post("/debug/mail-check", restrictTo("admin"), debugMailCheck);
 
 // Address management
 router.get("/addresses", getAddresses);

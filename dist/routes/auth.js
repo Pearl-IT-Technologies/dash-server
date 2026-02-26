@@ -20,6 +20,7 @@ router.put("/update-avatar", userController_1.updateAvatar);
 router.put("/updatedetails", userController_1.updateDetails);
 router.put("/updatepassword", authController_1.updatePassword);
 router.put("/preferences", userController_1.updatePreferences);
+router.post("/debug/mail-check", (0, auth_1.restrictTo)("admin"), authController_1.debugMailCheck);
 router.get("/addresses", addressController_1.getAddresses);
 router.post("/addresses", addressController_1.createAddress);
 router.delete("/addresses/:addressId", addressController_1.deleteAddress);

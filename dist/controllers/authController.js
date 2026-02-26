@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.logout = exports.updatePassword = exports.resetPasswordWithOtp = exports.requestPasswordResetOtp = exports.login = exports.register = void 0;
+exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.logout = exports.updatePassword = exports.resetPasswordWithOtp = exports.debugMailCheck = exports.requestPasswordResetOtp = exports.login = exports.register = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const asyncHandler_1 = require("../utils/asyncHandler");
 const AppError_1 = require("../utils/AppError");
@@ -49,7 +49,7 @@ exports.login = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const loginEntry = new LoginHistory_1.LoginHistory({
         userId: user?._id,
         ipAddress: ip,
-        userAgent: req.headers['user-agent'],
+        userAgent: req.headers["user-agent"],
         success: isMatch,
     });
     await loginEntry.save();
@@ -96,6 +96,35 @@ exports.requestPasswordResetOtp = (0, asyncHandler_1.asyncHandler)(async (req, r
         message: "Reset code sent to your email",
     });
     return;
+});
+exports.debugMailCheck = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        throw new AppError_1.AppError("Email is required", 400);
+    }
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const user = await User_1.default.findOne({ email: normalizedEmail }).select("_id email isActive");
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const result = (await (0, emailService_1.passwordResetOtpMail)(normalizedEmail, otpCode));
+    if (result?.error) {
+        throw new AppError_1.AppError(`SMTP send failed: ${result.error}`, 502);
+    }
+    res.status(200).json({
+        success: true,
+        message: "Mail diagnostic completed",
+        diagnostics: {
+            email: normalizedEmail,
+            userExists: !!user,
+            userId: user?._id ?? null,
+            isActive: user?.isActive ?? null,
+            smtp: {
+                accepted: result?.accepted ?? [],
+                rejected: result?.rejected ?? [],
+                response: result?.response ?? null,
+                messageId: result?.messageId ?? null,
+            },
+        },
+    });
 });
 exports.resetPasswordWithOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { email, otp, newPassword } = req.body;

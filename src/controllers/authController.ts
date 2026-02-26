@@ -8,7 +8,6 @@ import { getRealClientIp } from "../utils/GetIp";
 import { sendTokenResponse } from "../utils/JWTHelper";
 import crypto from "crypto";
 
-
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
@@ -32,9 +31,9 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
 	// Update last login
 	user.lastLogin = new Date();
-  await user.save();
-  // Send welcome mail asynchronously so signup response is not blocked by SMTP latency.
-  void welcomeMail(user.email).catch((error) => {
+	await user.save();
+	// Send welcome mail asynchronously so signup response is not blocked by SMTP latency.
+	void welcomeMail(user.email).catch((error) => {
 		console.error(
 			`Failed to send welcome email to ${user.email}`,
 			error instanceof Error ? error.message : error,
@@ -48,8 +47,8 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/auth/login
 // @access  Public
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
-  const ip = getRealClientIp(req);
+	const { email, password } = req.body;
+	const ip = getRealClientIp(req);
 
 	// Validate input
 	if (!email || !password) {
@@ -69,16 +68,16 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 	}
 
 	// Check if password matches
-  const isMatch = await user.comparePassword(password);
-  
-  const loginEntry = new LoginHistory({
-    userId: user?._id,
-    ipAddress: ip,
-    userAgent: req.headers['user-agent'],
-    success: isMatch,
-  });
+	const isMatch = await user.comparePassword(password);
 
-  await loginEntry.save();
+	const loginEntry = new LoginHistory({
+		userId: user?._id,
+		ipAddress: ip,
+		userAgent: req.headers["user-agent"],
+		success: isMatch,
+	});
+
+	await loginEntry.save();
 
 	if (!isMatch) {
 		throw new AppError("Invalid credentials", 401);
@@ -86,9 +85,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
 	// Update last login
 	user.lastLogin = new Date();
-  await user.save();
-  // Send login alert asynchronously so login response is not blocked by SMTP latency.
-  void loginAlertMail(user.email, ip).catch((error) => {
+	await user.save();
+	// Send login alert asynchronously so login response is not blocked by SMTP latency.
+	void loginAlertMail(user.email, ip).catch((error) => {
 		console.error(
 			`Failed to send login alert email to ${user.email}`,
 			error instanceof Error ? error.message : error,
@@ -146,6 +145,44 @@ export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Re
 		message: "Reset code sent to your email",
 	});
 	return;
+});
+
+// @desc    Diagnostic mail check (admin)
+// @route   POST /api/auth/debug/mail-check
+// @access  Private/Admin
+export const debugMailCheck = asyncHandler(async (req: Request, res: Response) => {
+	const { email } = req.body;
+
+	if (!email) {
+		throw new AppError("Email is required", 400);
+	}
+
+	const normalizedEmail = String(email).toLowerCase().trim();
+	const user = await User.findOne({ email: normalizedEmail }).select("_id email isActive");
+	const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+	const result = (await passwordResetOtpMail(normalizedEmail, otpCode)) as any;
+
+	if (result?.error) {
+		throw new AppError(`SMTP send failed: ${result.error}`, 502);
+	}
+
+	res.status(200).json({
+		success: true,
+		message: "Mail diagnostic completed",
+		diagnostics: {
+			email: normalizedEmail,
+			userExists: !!user,
+			userId: user?._id ?? null,
+			isActive: user?.isActive ?? null,
+			smtp: {
+				accepted: result?.accepted ?? [],
+				rejected: result?.rejected ?? [],
+				response: result?.response ?? null,
+				messageId: result?.messageId ?? null,
+			},
+		},
+	});
 });
 
 // @desc    Reset password with OTP

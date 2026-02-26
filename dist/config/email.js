@@ -7,15 +7,17 @@ exports.verifyTransporter = exports.transporter = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 exports.transporter = nodemailer_1.default.createTransport({
     pool: true,
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 465,
+    host: "smtp.hostinger.com",
+    port: 465,
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
     },
-    secure: (Number(process.env.SMTP_PORT) || 465) === 465,
+    secure: true,
+    tls: {
+        rejectUnauthorized: false,
+    },
     connectionTimeout: 10000,
-    greetingTimeout: 10000,
     socketTimeout: 10000,
 });
 const verifyTransporter = async (retries = 3, delay = 5000) => {

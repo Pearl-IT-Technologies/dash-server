@@ -342,12 +342,14 @@ exports.createUser = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     });
 });
 exports.updateUserById = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    if (req.body.role !== undefined) {
+        throw new AppError_1.AppError("Role updates are not allowed via this endpoint", 403);
+    }
     const fieldsToUpdate = {
         firstName: req.body.firstName,
         lastName: req.body.lastName,
         username: req.body.username,
         email: req.body.email,
-        role: req.body.role,
         isActive: req.body.isActive,
         phone: req.body.phone,
         dateOfBirth: req.body.dateOfBirth,
@@ -449,6 +451,9 @@ exports.bulkUpdateUsers = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { userIds, updateData } = req.body;
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
         throw new AppError_1.AppError("Please provide valid user IDs", 400);
+    }
+    if (updateData?.role !== undefined) {
+        throw new AppError_1.AppError("Role updates are not allowed via this endpoint", 403);
     }
     const result = await User_1.default.updateMany({ _id: { $in: userIds } }, updateData, { runValidators: true });
     res.status(200).json({

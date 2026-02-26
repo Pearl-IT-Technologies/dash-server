@@ -466,12 +466,15 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 // @route   PUT /api/admin/users/:id
 // @access  Private/Admin
 export const updateUserById = asyncHandler(async (req: Request, res: Response) => {
+	if (req.body.role !== undefined) {
+		throw new AppError("Role updates are not allowed via this endpoint", 403);
+	}
+
 	const fieldsToUpdate = {
 		firstName: req.body.firstName,
 		lastName: req.body.lastName,
 		username: req.body.username,
 		email: req.body.email,
-		role: req.body.role,
 		isActive: req.body.isActive,
 		phone: req.body.phone,
 		dateOfBirth: req.body.dateOfBirth,
@@ -608,6 +611,9 @@ export const bulkUpdateUsers = asyncHandler(async (req: Request, res: Response) 
 
 	if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
 		throw new AppError("Please provide valid user IDs", 400);
+	}
+	if (updateData?.role !== undefined) {
+		throw new AppError("Role updates are not allowed via this endpoint", 403);
 	}
 
 	const result = await User.updateMany({ _id: { $in: userIds } }, updateData, { runValidators: true });
