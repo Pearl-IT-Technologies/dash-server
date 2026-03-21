@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.loginSchema = exports.registerSchema = exports.updateUserSchema = exports.createOrderSchema = exports.updateProductSchema = exports.createProductSchema = exports.validate = void 0;
 const zod_1 = require("zod");
 const AppError_1 = require("../utils/AppError");
+const productGenderSchema = zod_1.z.enum(['male', 'female']);
 const validate = (schema) => {
     return (req, res, next) => {
         try {
@@ -32,10 +33,15 @@ exports.createProductSchema = zod_1.z.object({
         images: zod_1.z.array(zod_1.z.string().url('Invalid image URL')).min(1, 'At least one image is required'),
         category: zod_1.z.string().min(1, 'Category is required'),
         subcategory: zod_1.z.string().min(1, 'Subcategory is required'),
+        gender: productGenderSchema.optional(),
         sizes: zod_1.z.array(zod_1.z.string()).min(1, 'At least one size is required'),
         colors: zod_1.z.array(zod_1.z.string()).min(1, 'At least one color is required'),
+        inStock: zod_1.z.boolean().optional(),
         stockCount: zod_1.z.number().min(0, 'Stock count must be non-negative'),
         features: zod_1.z.array(zod_1.z.string()).optional(),
+        isNewProduct: zod_1.z.boolean().optional(),
+        isFeatured: zod_1.z.boolean().optional(),
+        isActive: zod_1.z.boolean().optional(),
         tags: zod_1.z.array(zod_1.z.string()).optional(),
         sku: zod_1.z.string().min(1, 'SKU is required'),
         weight: zod_1.z.number().min(0, 'Weight must be positive').optional(),
@@ -44,6 +50,8 @@ exports.createProductSchema = zod_1.z.object({
             width: zod_1.z.number().min(0),
             height: zod_1.z.number().min(0),
         }).optional(),
+        seoTitle: zod_1.z.string().max(60, 'SEO title too long').optional(),
+        seoDescription: zod_1.z.string().max(160, 'SEO description too long').optional(),
     }),
 });
 exports.updateProductSchema = zod_1.z.object({
@@ -55,14 +63,26 @@ exports.updateProductSchema = zod_1.z.object({
         images: zod_1.z.array(zod_1.z.string().url()).optional(),
         category: zod_1.z.string().optional(),
         subcategory: zod_1.z.string().optional(),
+        gender: productGenderSchema.optional(),
         sizes: zod_1.z.array(zod_1.z.string()).optional(),
         colors: zod_1.z.array(zod_1.z.string()).optional(),
+        inStock: zod_1.z.boolean().optional(),
         stockCount: zod_1.z.number().min(0).optional(),
         features: zod_1.z.array(zod_1.z.string()).optional(),
         tags: zod_1.z.array(zod_1.z.string()).optional(),
         isNew: zod_1.z.boolean().optional(),
+        isNewProduct: zod_1.z.boolean().optional(),
         isFeatured: zod_1.z.boolean().optional(),
         isActive: zod_1.z.boolean().optional(),
+        sku: zod_1.z.string().min(1).optional(),
+        weight: zod_1.z.number().min(0).optional(),
+        dimensions: zod_1.z.object({
+            length: zod_1.z.number().min(0),
+            width: zod_1.z.number().min(0),
+            height: zod_1.z.number().min(0),
+        }).optional(),
+        seoTitle: zod_1.z.string().max(60).optional(),
+        seoDescription: zod_1.z.string().max(160).optional(),
     }),
 });
 exports.createOrderSchema = zod_1.z.object({

@@ -8,6 +8,7 @@ export interface IProduct extends Document {
 	images: string[];
 	category: string;
 	subcategory: string;
+	gender?: "male" | "female";
 	sizes: string[];
 	colors: string[];
 	inStock: boolean;
@@ -74,6 +75,13 @@ const ProductSchema = new Schema<IProduct>(
 			type: String,
 			required: [true, "Product subcategory is required"],
 			trim: true,
+		},
+		gender: {
+			type: String,
+			enum: ["male", "female"],
+			lowercase: true,
+			trim: true,
+			index: true,
 		},
 		sizes: [
 			{

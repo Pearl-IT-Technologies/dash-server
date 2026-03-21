@@ -3,6 +3,8 @@ import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { AppError } from '../utils/AppError'
 
+const productGenderSchema = z.enum(['male', 'female'])
+
 // Generic validation middleware
 export const validate = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -33,10 +35,15 @@ export const createProductSchema = z.object({
     images: z.array(z.string().url('Invalid image URL')).min(1, 'At least one image is required'),
     category: z.string().min(1, 'Category is required'),
     subcategory: z.string().min(1, 'Subcategory is required'),
+    gender: productGenderSchema.optional(),
     sizes: z.array(z.string()).min(1, 'At least one size is required'),
     colors: z.array(z.string()).min(1, 'At least one color is required'),
+    inStock: z.boolean().optional(),
     stockCount: z.number().min(0, 'Stock count must be non-negative'),
     features: z.array(z.string()).optional(),
+    isNewProduct: z.boolean().optional(),
+    isFeatured: z.boolean().optional(),
+    isActive: z.boolean().optional(),
     tags: z.array(z.string()).optional(),
     sku: z.string().min(1, 'SKU is required'),
     weight: z.number().min(0, 'Weight must be positive').optional(),
@@ -45,6 +52,8 @@ export const createProductSchema = z.object({
       width: z.number().min(0),
       height: z.number().min(0),
     }).optional(),
+    seoTitle: z.string().max(60, 'SEO title too long').optional(),
+    seoDescription: z.string().max(160, 'SEO description too long').optional(),
   }),
 })
 
@@ -57,14 +66,26 @@ export const updateProductSchema = z.object({
     images: z.array(z.string().url()).optional(),
     category: z.string().optional(),
     subcategory: z.string().optional(),
+    gender: productGenderSchema.optional(),
     sizes: z.array(z.string()).optional(),
     colors: z.array(z.string()).optional(),
+    inStock: z.boolean().optional(),
     stockCount: z.number().min(0).optional(),
     features: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
     isNew: z.boolean().optional(),
+    isNewProduct: z.boolean().optional(),
     isFeatured: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    sku: z.string().min(1).optional(),
+    weight: z.number().min(0).optional(),
+    dimensions: z.object({
+      length: z.number().min(0),
+      width: z.number().min(0),
+      height: z.number().min(0),
+    }).optional(),
+    seoTitle: z.string().max(60).optional(),
+    seoDescription: z.string().max(160).optional(),
   }),
 })
 

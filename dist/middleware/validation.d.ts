@@ -10,10 +10,15 @@ export declare const createProductSchema: z.ZodObject<{
         images: z.ZodArray<z.ZodString, "many">;
         category: z.ZodString;
         subcategory: z.ZodString;
+        gender: z.ZodOptional<z.ZodEnum<["male", "female"]>>;
         sizes: z.ZodArray<z.ZodString, "many">;
         colors: z.ZodArray<z.ZodString, "many">;
+        inStock: z.ZodOptional<z.ZodBoolean>;
         stockCount: z.ZodNumber;
         features: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        isNewProduct: z.ZodOptional<z.ZodBoolean>;
+        isFeatured: z.ZodOptional<z.ZodBoolean>;
+        isActive: z.ZodOptional<z.ZodBoolean>;
         tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         sku: z.ZodString;
         weight: z.ZodOptional<z.ZodNumber>;
@@ -30,6 +35,8 @@ export declare const createProductSchema: z.ZodObject<{
             width: number;
             height: number;
         }>>;
+        seoTitle: z.ZodOptional<z.ZodString>;
+        seoDescription: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         name: string;
         description: string;
@@ -41,8 +48,13 @@ export declare const createProductSchema: z.ZodObject<{
         colors: string[];
         stockCount: number;
         sku: string;
+        gender?: "male" | "female" | undefined;
+        isActive?: boolean | undefined;
         originalPrice?: number | undefined;
+        inStock?: boolean | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
+        isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
         weight?: number | undefined;
         dimensions?: {
@@ -50,6 +62,8 @@ export declare const createProductSchema: z.ZodObject<{
             width: number;
             height: number;
         } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     }, {
         name: string;
         description: string;
@@ -61,8 +75,13 @@ export declare const createProductSchema: z.ZodObject<{
         colors: string[];
         stockCount: number;
         sku: string;
+        gender?: "male" | "female" | undefined;
+        isActive?: boolean | undefined;
         originalPrice?: number | undefined;
+        inStock?: boolean | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
+        isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
         weight?: number | undefined;
         dimensions?: {
@@ -70,6 +89,8 @@ export declare const createProductSchema: z.ZodObject<{
             width: number;
             height: number;
         } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -83,8 +104,13 @@ export declare const createProductSchema: z.ZodObject<{
         colors: string[];
         stockCount: number;
         sku: string;
+        gender?: "male" | "female" | undefined;
+        isActive?: boolean | undefined;
         originalPrice?: number | undefined;
+        inStock?: boolean | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
+        isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
         weight?: number | undefined;
         dimensions?: {
@@ -92,6 +118,8 @@ export declare const createProductSchema: z.ZodObject<{
             width: number;
             height: number;
         } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     };
 }, {
     body: {
@@ -105,8 +133,13 @@ export declare const createProductSchema: z.ZodObject<{
         colors: string[];
         stockCount: number;
         sku: string;
+        gender?: "male" | "female" | undefined;
+        isActive?: boolean | undefined;
         originalPrice?: number | undefined;
+        inStock?: boolean | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
+        isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
         weight?: number | undefined;
         dimensions?: {
@@ -114,6 +147,8 @@ export declare const createProductSchema: z.ZodObject<{
             width: number;
             height: number;
         } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     };
 }>;
 export declare const updateProductSchema: z.ZodObject<{
@@ -125,17 +160,38 @@ export declare const updateProductSchema: z.ZodObject<{
         images: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         category: z.ZodOptional<z.ZodString>;
         subcategory: z.ZodOptional<z.ZodString>;
+        gender: z.ZodOptional<z.ZodEnum<["male", "female"]>>;
         sizes: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         colors: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        inStock: z.ZodOptional<z.ZodBoolean>;
         stockCount: z.ZodOptional<z.ZodNumber>;
         features: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         isNew: z.ZodOptional<z.ZodBoolean>;
+        isNewProduct: z.ZodOptional<z.ZodBoolean>;
         isFeatured: z.ZodOptional<z.ZodBoolean>;
         isActive: z.ZodOptional<z.ZodBoolean>;
+        sku: z.ZodOptional<z.ZodString>;
+        weight: z.ZodOptional<z.ZodNumber>;
+        dimensions: z.ZodOptional<z.ZodObject<{
+            length: z.ZodNumber;
+            width: z.ZodNumber;
+            height: z.ZodNumber;
+        }, "strip", z.ZodTypeAny, {
+            length: number;
+            width: number;
+            height: number;
+        }, {
+            length: number;
+            width: number;
+            height: number;
+        }>>;
+        seoTitle: z.ZodOptional<z.ZodString>;
+        seoDescription: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         isNew?: boolean | undefined;
         name?: string | undefined;
+        gender?: "male" | "female" | undefined;
         isActive?: boolean | undefined;
         description?: string | undefined;
         price?: number | undefined;
@@ -145,13 +201,25 @@ export declare const updateProductSchema: z.ZodObject<{
         subcategory?: string | undefined;
         sizes?: string[] | undefined;
         colors?: string[] | undefined;
+        inStock?: boolean | undefined;
         stockCount?: number | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
         isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
+        sku?: string | undefined;
+        weight?: number | undefined;
+        dimensions?: {
+            length: number;
+            width: number;
+            height: number;
+        } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     }, {
         isNew?: boolean | undefined;
         name?: string | undefined;
+        gender?: "male" | "female" | undefined;
         isActive?: boolean | undefined;
         description?: string | undefined;
         price?: number | undefined;
@@ -161,15 +229,27 @@ export declare const updateProductSchema: z.ZodObject<{
         subcategory?: string | undefined;
         sizes?: string[] | undefined;
         colors?: string[] | undefined;
+        inStock?: boolean | undefined;
         stockCount?: number | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
         isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
+        sku?: string | undefined;
+        weight?: number | undefined;
+        dimensions?: {
+            length: number;
+            width: number;
+            height: number;
+        } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         isNew?: boolean | undefined;
         name?: string | undefined;
+        gender?: "male" | "female" | undefined;
         isActive?: boolean | undefined;
         description?: string | undefined;
         price?: number | undefined;
@@ -179,15 +259,27 @@ export declare const updateProductSchema: z.ZodObject<{
         subcategory?: string | undefined;
         sizes?: string[] | undefined;
         colors?: string[] | undefined;
+        inStock?: boolean | undefined;
         stockCount?: number | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
         isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
+        sku?: string | undefined;
+        weight?: number | undefined;
+        dimensions?: {
+            length: number;
+            width: number;
+            height: number;
+        } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     };
 }, {
     body: {
         isNew?: boolean | undefined;
         name?: string | undefined;
+        gender?: "male" | "female" | undefined;
         isActive?: boolean | undefined;
         description?: string | undefined;
         price?: number | undefined;
@@ -197,10 +289,21 @@ export declare const updateProductSchema: z.ZodObject<{
         subcategory?: string | undefined;
         sizes?: string[] | undefined;
         colors?: string[] | undefined;
+        inStock?: boolean | undefined;
         stockCount?: number | undefined;
         features?: string[] | undefined;
+        isNewProduct?: boolean | undefined;
         isFeatured?: boolean | undefined;
         tags?: string[] | undefined;
+        sku?: string | undefined;
+        weight?: number | undefined;
+        dimensions?: {
+            length: number;
+            width: number;
+            height: number;
+        } | undefined;
+        seoTitle?: string | undefined;
+        seoDescription?: string | undefined;
     };
 }>;
 export declare const createOrderSchema: z.ZodObject<{

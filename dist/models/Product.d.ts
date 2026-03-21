@@ -7,6 +7,7 @@ export interface IProduct extends Document {
     images: string[];
     category: string;
     subcategory: string;
+    gender?: "male" | "female";
     sizes: string[];
     colors: string[];
     inStock: boolean;
