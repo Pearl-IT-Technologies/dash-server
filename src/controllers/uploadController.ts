@@ -1,17 +1,22 @@
-// controllers/uploadController.ts
 import { Request, Response } from 'express'
-import { v2 as cloudinary } from 'cloudinary'
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { asyncHandler } from '../utils/asyncHandler'
 import { AppError } from '../utils/AppError'
+import crypto from 'crypto'
+import path from 'path'
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+const s3 = new S3Client({
+  region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
 })
 
-// @desc    Upload image to Cloudinary
+const BUCKET = process.env.AWS_S3_BUCKET!
+const REGION = process.env.AWS_REGION!
+
+// @desc    Upload image to S3
 // @route   POST /api/upload/image
 // @access  Private (Admin/Staff)
 export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
@@ -20,45 +25,55 @@ export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    // Convert buffer to base64
-    const base64Image = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
+    const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg'
+    const key = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`
 
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(base64Image, {
-      folder: 'dashngshop',
-      transformation: [
-        { width: 800, height: 800, crop: 'fill', quality: 'auto' },
-      ],
-    })
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+      }),
+    )
+
+    const url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`
 
     res.status(200).json({
       success: true,
       data: {
-        url: result.secure_url,
-        publicId: result.public_id,
-        width: result.width,
-        height: result.height,
+        url,
+        publicId: key,
+        width: null,
+        height: null,
       },
     })
   } catch (error) {
+    console.error('S3 upload error:', error)
     throw new AppError('Error uploading image', 500)
   }
 })
 
-// @desc    Delete image from Cloudinary
+// @desc    Delete image from S3
 // @route   DELETE /api/upload/image/:publicId
 // @access  Private (Admin/Staff)
 export const deleteImage = asyncHandler(async (req: Request, res: Response) => {
   const { publicId } = req.params
 
   try {
-    await cloudinary.uploader.destroy(publicId as string)
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET,
+        Key: publicId,
+      }),
+    )
 
     res.status(200).json({
       success: true,
       message: 'Image deleted successfully',
     })
   } catch (error) {
+    console.error('S3 delete error:', error)
     throw new AppError('Error deleting image', 500)
   }
 })
