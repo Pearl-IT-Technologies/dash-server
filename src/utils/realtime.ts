@@ -11,6 +11,14 @@ export const emitProductEvent = (event: string, product: any) => {
 	}
 };
 
+export const emitProductDeleted = (product: any) => {
+	if (product && product.isActive !== false && product.visibility !== "private") {
+		io.emit("product-deleted", product.id);
+	} else {
+		io.to(STAFF_ROOM).emit("product-deleted", product.id);
+	}
+};
+
 // Orders contain customer PII: only staff and the owning user receive them.
 export const emitOrderEvent = (event: string, payload: any, userId?: any) => {
 	let target = io.to(STAFF_ROOM);

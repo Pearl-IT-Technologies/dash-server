@@ -9,6 +9,7 @@ import {
 	verifyPayment,
   updateOrder,
   trackOrderPublic,
+  quoteOrder,
 } from "../controllers/orderController";
 import { optionalAuth, protect, restrictTo } from "../middleware/auth";
 
@@ -20,6 +21,8 @@ router.get("/track/:orderNumber", trackOrderPublic);
 // Guest checkout allowed; a logged-in user is attached via optionalAuth (never from the body)
 router.post("/", optionalAuth, createOrder);
 router.post("/verify-payment", verifyPayment);
+// Exact amount to charge (items or private link); the client must not compute totals itself
+router.post("/quote", quoteOrder);
 
 // All routes are protected
 router.use(protect);

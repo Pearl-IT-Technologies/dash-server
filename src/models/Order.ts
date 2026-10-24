@@ -43,6 +43,8 @@ export interface IOrder extends Document {
 	cancelledAt?: Date;
 	cancelReason?: string;
 	notes?: string;
+	source: "public" | "private_link";
+	privateLink?: mongoose.Types.ObjectId;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -204,6 +206,17 @@ const OrderSchema = new Schema<IOrder>(
 			type: String,
 			trim: true,
 			maxlength: [500, "Notes cannot exceed 500 characters"],
+		},
+		source: {
+			type: String,
+			enum: ["public", "private_link"],
+			default: "public",
+			index: true,
+		},
+		privateLink: {
+			type: Schema.Types.ObjectId,
+			ref: "PrivateLink",
+			index: true,
 		},
 	},
 	{

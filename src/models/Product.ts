@@ -19,6 +19,7 @@ export interface IProduct extends Document {
 	isNewProduct: boolean;
 	isFeatured: boolean;
 	isActive: boolean;
+	visibility: "public" | "private";
 	tags: string[];
 	sku: string;
 	weight?: number;
@@ -136,6 +137,13 @@ const ProductSchema = new Schema<IProduct>(
 		isActive: {
 			type: Boolean,
 			default: true,
+			index: true,
+		},
+		// "private" products never appear in public listings; they are sold via PrivateLink only
+		visibility: {
+			type: String,
+			enum: ["public", "private"],
+			default: "public",
 			index: true,
 		},
 		tags: [

@@ -10,13 +10,11 @@ import { verifyPaystackPayment } from "../utils/PaystackVerification";
 import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
 import { getStaffMails } from "../utils/GetStaffMails";
 import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
-
-// Amount (kobo) the customer should have been charged: per-item NGN prices are rounded
-// the same way the storefront displays them (see convertProductPrices).
-export const expectedChargeKobo = (items: { price: number; quantity: number }[], shippingUsd: number, rate: number) => {
-	const itemsNgn = items.reduce((sum, item) => sum + Math.round(item.price * rate) * item.quantity, 0);
-	return (itemsNgn + Math.round(shippingUsd * rate)) * 100;
-};
+import { buildQuote } from "../utils/pricing";
+import { PUBLIC_PRODUCT_FILTER } from "../utils/productVisibility";
+import PrivateLink, { hashLinkToken, usableLinkFilter } from "../models/PrivateLink";
+import { logLinkEvent } from "../models/PrivateLinkEvent";
+import { getRealClientIp } from "../utils/GetIp";
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -102,31 +100,116 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
 	}
 });
 
+interface CartLine {
+	product: any;
+	quantity: number;
+	size?: string;
+	color?: string;
+}
+
+// Resolve what is being bought into product documents without touching stock.
+// With a private link token the link's preset cart is used and the body's items are ignored.
+const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }> => {
+	const { items, privateLinkToken } = body;
+	let link: any = null;
+	let requested: { productId: any; quantity: number; size?: string; color?: string }[];
+
+	if (privateLinkToken !== undefined && privateLinkToken !== null && privateLinkToken !== "") {
+		if (typeof privateLinkToken !== "string") {
+			throw new AppError("Private link not found", 404);
+		}
+		link = await PrivateLink.findOne({ tokenHash: hashLinkToken(privateLinkToken) });
+		if (!link) {
+			throw new AppError("Private link not found", 404);
+		}
+		requested = link.items.map((item: any) => ({
+			productId: item.product,
+			quantity: item.quantity,
+			size: item.size,
+			color: item.color,
+		}));
+	} else {
+		if (!Array.isArray(items) || items.length === 0) {
+			throw new AppError("No order items provided", 400);
+		}
+		for (const item of items) {
+			if (!item || !mongoose.isValidObjectId(item.productId)) {
+				throw new AppError("Invalid product in order", 400);
+			}
+			if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+				throw new AppError("Invalid item quantity", 400);
+			}
+		}
+		requested = items;
+	}
+
+	const lines: CartLine[] = [];
+	for (const item of requested) {
+		// Private-sale products are only reachable through a link
+		const filter = link ? { _id: item.productId, isActive: true } : { _id: item.productId, ...PUBLIC_PRODUCT_FILTER };
+		const product = await Product.findOne(filter);
+		if (!product) {
+			throw new AppError(link ? "An item on this private link is no longer available" : `Product ${item.productId} not found`, 404);
+		}
+		lines.push({ product, quantity: item.quantity, size: item.size, color: item.color });
+	}
+
+	return { link, lines };
+};
+
+// @desc    Quote an order (items or private link): exact amount the client must charge
+// @route   POST /api/orders/quote
+// @access  Public
+export const quoteOrder = asyncHandler(async (req: Request, res: Response) => {
+	const { link, lines } = await resolveCart(req.body);
+	if (link && link.status !== "active") {
+		throw new AppError("Private link not found", 404);
+	}
+
+	const quote = await buildQuote(lines.map((line) => ({ price: line.product.price, quantity: line.quantity })));
+
+	res.status(200).json({
+		currency: "NGN",
+		items: lines.map((line) => ({
+			productId: line.product.id,
+			name: line.product.name,
+			image: line.product.images[0],
+			size: line.size,
+			color: line.color,
+			quantity: line.quantity,
+			unitPriceNGN: Math.round(line.product.price * quote.rate),
+			available: line.product.stockCount >= line.quantity,
+		})),
+		subtotal: quote.subtotalNGN,
+		shipping: quote.shippingNGN,
+		total: quote.totalNGN,
+		amountKobo: quote.amountKobo,
+		shippingRule: quote.shippingRule,
+		...(link && { privateLink: { title: link.title, expiresAt: link.expiresAt } }),
+	});
+});
+
 // @desc    Create order
 // @route   POST /api/orders
-// @access  Private
+// @access  Public (guest) / optional auth
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
-	const { items, shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
+	const { shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
 	// Never trust a userId from the body: use the authenticated user (optionalAuth) or guest
 	const userId = req.user?.id;
 	const lowStocks = [];
 	const outOfStocks = [];
 
-	if (!Array.isArray(items) || items.length === 0) {
-		throw new AppError("No order items provided", 400);
+	const { link, lines } = await resolveCart(req.body);
+
+	if (link && paymentMethod !== "paystack") {
+		throw new AppError("Private link orders must be paid with Paystack", 400);
 	}
 
-	for (const item of items) {
-		if (!item || !mongoose.isValidObjectId(item.productId)) {
-			throw new AppError("Invalid product in order", 400);
-		}
-		if (!Number.isInteger(item.quantity) || item.quantity < 1) {
-			throw new AppError("Invalid item quantity", 400);
-		}
-	}
+	const quote = await buildQuote(lines.map((line) => ({ price: line.product.price, quantity: line.quantity })));
 
-	// Paystack: the reference must be present, unused, and verified with Paystack
-	let paidAmountKobo: number | null = null;
+	// Paystack: the reference must be present, unused, verified, and for exactly the quoted amount.
+	// Any mismatch is rejected outright: no order, no stock change.
+	let paymentVerified = false;
 	const reference: string | undefined = paymentDetails?.reference;
 	if (paymentMethod === "paystack") {
 		if (!reference || typeof reference !== "string") {
@@ -147,54 +230,58 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		if (!verification.success || verification.data?.status !== "success") {
 			throw new AppError("Invalid payment reference", 400);
 		}
-		paidAmountKobo = Number(verification.data.amount);
+
+		const paidKobo = Number(verification.data.amount);
+		const currency = verification.data.currency;
+		if (paidKobo !== quote.amountKobo || (currency && currency !== "NGN")) {
+			console.error(
+				`Payment amount mismatch for ${reference}: charged ${paidKobo} ${currency || ""}, expected ${quote.amountKobo} NGN`,
+			);
+			throw new AppError(
+				`Payment amount mismatch: charged ${paidKobo / 100} NGN but the order total is ${quote.totalNGN} NGN. No order was created.`,
+				400,
+			);
+		}
+		paymentVerified = true;
 	}
 
-	// Calculate totals and atomically reserve stock
-	let subtotal = 0;
+	// Atomically reserve stock
 	const orderItems = [];
 	const reserved: { id: any; quantity: number }[] = [];
+	let linkUseConsumed = false;
 
-	const releaseStock = async () => {
+	const rollback = async () => {
 		for (const r of reserved) {
 			await Product.updateOne({ _id: r.id }, { $inc: { stockCount: r.quantity }, $set: { inStock: true } });
+		}
+		if (linkUseConsumed) {
+			await PrivateLink.updateOne({ _id: link._id }, { $inc: { uses: -1 } });
 		}
 	};
 
 	try {
-		for (const item of items) {
-			// Conditional decrement: only succeeds if the product is orderable and has enough stock,
+		for (const line of lines) {
+			// Conditional decrement: only succeeds if still orderable with enough stock,
 			// so concurrent checkouts can't oversell.
+			const baseFilter = link ? { isActive: true } : PUBLIC_PRODUCT_FILTER;
 			const product = await Product.findOneAndUpdate(
-				{
-					_id: item.productId,
-					isActive: true,
-					visibility: { $ne: "private" }, // private-sale items will only be orderable via a valid link
-					stockCount: { $gte: item.quantity },
-				},
-				{ $inc: { stockCount: -item.quantity } },
+				{ _id: line.product._id, ...baseFilter, stockCount: { $gte: line.quantity } },
+				{ $inc: { stockCount: -line.quantity } },
 				{ new: true },
 			);
 
 			if (!product) {
-				const exists = await Product.findOne({ _id: item.productId, isActive: true, visibility: { $ne: "private" } });
-				if (!exists) {
-					throw new AppError(`Product ${item.productId} not found`, 404);
-				}
-				throw new AppError(`Insufficient stock for ${exists.name}`, 400);
+				throw new AppError(`Insufficient stock for ${line.product.name}`, 400);
 			}
-			reserved.push({ id: product._id, quantity: item.quantity });
-
-			const itemTotal = product.price * item.quantity;
-			subtotal += itemTotal;
+			reserved.push({ id: product._id, quantity: line.quantity });
 
 			orderItems.push({
 				product: product._id,
 				name: product.name,
-				price: product.price,
-				quantity: item.quantity,
-				size: item.size,
-				color: item.color,
+				price: line.product.price, // the quoted price that was charged
+				quantity: line.quantity,
+				size: line.size,
+				color: line.color,
 				image: product.images[0],
 			});
 
@@ -206,30 +293,28 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 				lowStocks.push(product);
 			}
 
-			// Emit real-time product update
 			emitProductEvent("inventory-updated", product);
 		}
 	} catch (error) {
-		await releaseStock();
+		await rollback();
 		throw error;
 	}
 
-	// Calculate shipping (free shipping for orders over $30 USD)
-	const shipping = subtotal > 30 ? 0 : 5; // $5 shipping fee
-	const total = subtotal + shipping;
-
-	// Verify the amount actually charged by Paystack covers the server-computed total.
-	// The payment is already captured at this point, so on a shortfall we still record the
-	// order but leave it unpaid/pending for staff review instead of losing it.
-	let paymentOk = false;
+	// Private link: consume one use atomically. If the link expired, was revoked or ran out of
+	// uses between quote and payment, the customer has already paid the exact amount, so keep
+	// the order in a pending state for staff/salesrep to resolve manually.
 	let reviewNote: string | undefined;
-	if (paymentMethod === "paystack" && paidAmountKobo !== null) {
-		const rate = await getExchangeRate();
-		const expectedKobo = expectedChargeKobo(orderItems, shipping, rate);
-		if (paidAmountKobo >= expectedKobo) {
-			paymentOk = true;
+	if (link) {
+		const consumed = await PrivateLink.findOneAndUpdate(
+			{ _id: link._id, ...usableLinkFilter() },
+			{ $inc: { uses: 1 } },
+			{ new: true },
+		);
+		if (consumed) {
+			linkUseConsumed = true;
 		} else {
-			reviewNote = `NEEDS REVIEW: Paystack charged ${paidAmountKobo / 100} NGN, expected ${expectedKobo / 100} NGN`;
+			const current = await PrivateLink.findById(link._id);
+			reviewNote = `NEEDS REVIEW: private link "${link.title}" was ${current?.status || "unavailable"} when the order was placed`;
 		}
 	}
 
@@ -240,26 +325,37 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		orderNumber,
 		user: userId || undefined,
 		items: orderItems,
-		subtotal,
-		shipping,
+		subtotal: quote.subtotalUSD,
+		shipping: quote.shippingUSD,
 		tax: 0, // Assuming no tax for simplicity, can be added later
-		total,
+		total: quote.totalUSD,
 		shippingAddress,
 		billingAddress: billingAddress || shippingAddress,
 		paymentMethod,
 		paymentDetails,
-		status: paymentOk ? "confirmed" : "pending",
-		paymentStatus: paymentOk ? "paid" : "pending",
+		status: paymentVerified && !reviewNote ? "confirmed" : "pending",
+		paymentStatus: paymentVerified ? "paid" : "pending",
 		notes: reviewNote,
+		source: link ? "private_link" : "public",
+		privateLink: link?._id,
 	}).catch(async (error: any) => {
-		await releaseStock();
+		await rollback();
 		if (error?.code === 11000) {
 			throw new AppError("This payment reference has already been used", 409);
 		}
 		throw error;
 	});
 
-	// Populate the order with product details
+	if (link) {
+		await logLinkEvent({
+			link: link._id,
+			action: reviewNote ? "order_needs_review" : "ordered",
+			order: order._id as any,
+			ip: getRealClientIp(req),
+			details: reviewNote ? { note: reviewNote } : undefined,
+		});
+	}
+
 	await order.populate("items.product");
 
 	// Emit real-time update (staff + owning user only)

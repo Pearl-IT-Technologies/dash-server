@@ -1,3 +1,4 @@
+import { PUBLIC_PRODUCT_FILTER } from "../utils/productVisibility";
 import { Request, Response } from "express";
 import { AppError } from "../utils/AppError";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -196,7 +197,7 @@ export const getWishlist = asyncHandler(async (req: Request, res: Response) => {
 
 	const user = await User.findById(userId).populate({
 		path: "wishlist",
-		match: { isActive: true },
+		match: PUBLIC_PRODUCT_FILTER,
 		select: "name price images category stockCount inStock discountPercentage originalPrice sku",
 	});
 
@@ -223,7 +224,7 @@ export const toggleWishlist = asyncHandler(async (req: Request, res: Response) =
 	}
 
 	// Check if product exists and is active
-	const product = await Product.findOne({ _id: productId, isActive: true });
+	const product = await Product.findOne({ _id: productId, ...PUBLIC_PRODUCT_FILTER });
 	if (!product) {
 		throw new AppError("Product not found or is inactive", 404);
 	}
@@ -313,7 +314,7 @@ export const syncWishlist = asyncHandler(async (req: Request, res: Response) => 
 	const invalidProductIds = [];
 
 	for (const productId of ids) {
-		const product = await Product.findOne({ _id: productId.toString(), isActive: true });
+		const product = await Product.findOne({ _id: productId.toString(), ...PUBLIC_PRODUCT_FILTER });
 		if (product) {
 			validProductIds.push(productId.toString());
 		} else {

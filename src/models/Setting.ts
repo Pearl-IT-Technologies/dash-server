@@ -26,8 +26,8 @@ const SettingSchema = new mongoose.Schema({
 	timestamps: true,
 });
 
-// Ensure only one settings document exists
-SettingSchema.index({}, { unique: true });
+// Single settings document is enforced in code (findOne() then create()); an empty
+// index spec is invalid in MongoDB, so no index is declared here.
 
 const Setting = mongoose.model<ISetting>("Setting", SettingSchema);
 

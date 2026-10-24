@@ -77,15 +77,38 @@ describe("POST /api/orders hardening", () => {
 		expect((await Product.findById(p.id))!.stockCount).toBe(4);
 	});
 
-	it("records an underpaid order as pending/needs review instead of paid", async () => {
+	it("rejects underpaid and overpaid orders outright without touching stock", async () => {
 		const p = await makeProduct();
-		mockPaid(100); // 1 NGN
+		for (const kobo of [100, paidKobo(40) - 100, paidKobo(40) + 100]) {
+			mockPaid(kobo);
+			const res = await order([{ productId: p.id, quantity: 1 }]);
+			expect(res.status).toBe(400);
+			expect(res.body.message).toMatch(/amount mismatch/i);
+		}
+		expect(await Order.countDocuments()).toBe(0);
+		expect((await Product.findById(p.id))!.stockCount).toBe(5);
+	});
+
+	it("applies the $5 shipping rule under $30 and requires it in the charge", async () => {
+		const p = await makeProduct({ price: 10 });
+		mockPaid(paidKobo(10)); // missing shipping
+		expect((await order([{ productId: p.id, quantity: 1 }])).status).toBe(400);
+		mockPaid(paidKobo(10) + paidKobo(5));
 		const res = await order([{ productId: p.id, quantity: 1 }]);
 		expect(res.status).toBe(201);
 		const saved = await Order.findOne();
-		expect(saved!.paymentStatus).toBe("pending");
-		expect(saved!.status).toBe("pending");
-		expect(saved!.notes).toMatch(/NEEDS REVIEW/);
+		expect(saved!.shipping).toBe(5);
+		expect(saved!.total).toBe(15);
+	});
+
+	it("quotes the exact amount to charge including shipping", async () => {
+		const p = await makeProduct({ price: 10 });
+		const res = await request(app).post("/api/orders/quote").send({ items: [{ productId: p.id, quantity: 2 }] });
+		expect(res.status).toBe(200);
+		expect(res.body.subtotal).toBe(2 * 10 * RATE);
+		expect(res.body.shipping).toBe(5 * RATE);
+		expect(res.body.amountKobo).toBe(paidKobo(10) * 2 + paidKobo(5));
+		expect(res.body.shippingRule).toMatchObject({ freeShippingThresholdUSD: 30, feeUSD: 5 });
 	});
 
 	it("rejects a reused payment reference and restores stock", async () => {
@@ -120,8 +143,7 @@ describe("POST /api/orders hardening", () => {
 		mockPaid(paidKobo(40));
 		expect((await order([{ productId: inactive.id, quantity: 1 }])).status).toBe(404);
 
-		const priv = await makeProduct();
-		await Product.collection.updateOne({ _id: priv._id }, { $set: { visibility: "private" } });
+		const priv = await makeProduct({ visibility: "private" });
 		expect((await order([{ productId: priv.id, quantity: 1 }])).status).toBe(404);
 		expect(await Order.countDocuments()).toBe(0);
 	});

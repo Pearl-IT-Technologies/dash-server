@@ -6,7 +6,9 @@ import {
   updateProduct,
   deleteProduct,
   updateProductStock,
-  getProductCategories
+  getProductCategories,
+  getAllProductsForStaff,
+  updateProductVisibility
 } from '../controllers/productController'
 import { protect, restrictTo } from '../middleware/auth'
 import { getRecentReceiving, recordReceiving } from '../controllers/receivingController'
@@ -17,12 +19,15 @@ const router = express.Router()
 router.get('/', getProducts)
 // Must be declared before '/:id', otherwise '/categories' is treated as an id
 router.get('/categories', getProductCategories)
+// Staff listing (includes private) must also precede '/:id'
+router.get('/admin/all', protect, restrictTo('admin', 'salesrep', 'storekeeper'), getAllProductsForStaff)
 router.get('/:id', getProduct)
 
 // Protected routes
 router.use(protect) // All routes after this middleware are protected
 
 // Admin/Staff only routes
+router.patch('/:id/visibility', restrictTo('admin', 'salesrep', 'storekeeper'), updateProductVisibility)
 router.get('/receiving/recent', restrictTo('admin', 'salesrep', 'storekeeper'), getRecentReceiving)
 router.post('/receiving', restrictTo('admin', 'salesrep', 'storekeeper'), recordReceiving)
 router.post('/', restrictTo('admin', 'salesrep', 'storekeeper'), createProduct)

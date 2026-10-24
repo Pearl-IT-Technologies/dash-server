@@ -17,6 +17,7 @@ import orderRoutes from "./routes/orders";
 import userRoutes from "./routes/users";
 import uploadRoutes from "./routes/upload";
 import settingsRoutes from "./routes/settings";
+import privateLinkRoutes from "./routes/privateLinks";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
 import { getJwtSecret } from "./middleware/auth";
@@ -100,6 +101,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/private-links", privateLinkRoutes);
 
 // Socket.IO for real-time features
 initSocket(io);
