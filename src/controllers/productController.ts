@@ -5,6 +5,41 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
 import { io } from "../index";
 import { convertProductsPrices, convertProductPrices } from "../utils/currencyHelper";
+import { emitProductEvent } from "../utils/realtime";
+
+// Fields staff may set through create/update. Ratings, review counts, ids and
+// timestamps are system-managed and are ignored if sent.
+const WRITABLE_PRODUCT_FIELDS = [
+	"name",
+	"description",
+	"price",
+	"originalPrice",
+	"images",
+	"category",
+	"subcategory",
+	"gender",
+	"sizes",
+	"colors",
+	"stockCount",
+	"features",
+	"isNewProduct",
+	"isFeatured",
+	"isActive",
+	"tags",
+	"sku",
+	"weight",
+	"dimensions",
+	"seoTitle",
+	"seoDescription",
+] as const;
+
+const pickProductFields = (body: any) => {
+	const data: Record<string, any> = {};
+	for (const field of WRITABLE_PRODUCT_FIELDS) {
+		if (body && body[field] !== undefined) data[field] = body[field];
+	}
+	return data;
+};
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -43,11 +78,11 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/products
 // @access  Private (Admin/Staff)
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
-	const product = await Product.create(req.body);
+	const product = await Product.create(pickProductFields(req.body));
 	const convertedProduct = await convertProductPrices(product);
 
 	// Emit real-time update
-	io.emit("product-created", convertedProduct);
+	emitProductEvent("product-created", convertedProduct);
 	res.status(201).json(convertedProduct);
 });
 
@@ -60,7 +95,13 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 		throw new AppError("Invalid product ID", 400);
 	}
 
-	const product = await Product.findByIdAndUpdate(id, req.body, {
+	const updateData = pickProductFields(req.body);
+	// Keep inStock in sync (the pre-save hook doesn't run on findByIdAndUpdate)
+	if (typeof updateData.stockCount === "number") {
+		updateData.inStock = updateData.stockCount > 0;
+	}
+
+	const product = await Product.findByIdAndUpdate(id, updateData, {
 		new: true,
 		runValidators: true,
 	});
@@ -70,7 +111,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 	}
 
 	const convertedProduct = await convertProductPrices(product);
-	io.emit("inventory-updated", convertedProduct);
+	emitProductEvent("inventory-updated", convertedProduct);
 	res.status(200).json(convertedProduct);
 });
 
@@ -127,7 +168,7 @@ export const updateProductStock = asyncHandler(async (req: Request, res: Respons
 	}
 
 	const convertedProduct = await convertProductPrices(product);
-	io.emit("inventory-updated", convertedProduct);
+	emitProductEvent("inventory-updated", convertedProduct);
 	res.status(200).json(convertedProduct);
 });
 

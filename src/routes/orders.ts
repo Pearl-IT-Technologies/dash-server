@@ -10,14 +10,15 @@ import {
   updateOrder,
   trackOrderPublic,
 } from "../controllers/orderController";
-import { protect, restrictTo } from "../middleware/auth";
+import { optionalAuth, protect, restrictTo } from "../middleware/auth";
 
 const router = express.Router();
 
 // Public routes (no auth required)
 router.get("/track/:orderNumber", trackOrderPublic);
 
-router.post("/", createOrder);
+// Guest checkout allowed; a logged-in user is attached via optionalAuth (never from the body)
+router.post("/", optionalAuth, createOrder);
 router.post("/verify-payment", verifyPayment);
 
 // All routes are protected

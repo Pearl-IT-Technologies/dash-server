@@ -189,7 +189,7 @@ const ProductSchema = new Schema<IProduct>(
 			transform: function (doc, ret) {
 				ret.id = ret._id;
 				ret.isNew = ret.isNewProduct;
-				delete ret.__v;
+				delete (ret as any).__v;
 				return ret;
 			},
 		},

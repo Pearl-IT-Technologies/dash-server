@@ -309,8 +309,6 @@ export const syncWishlist = asyncHandler(async (req: Request, res: Response) => 
 		throw new AppError("User not found", 404);
 	}
 
-	console.log(ids);
-
 	const validProductIds = [];
 	const invalidProductIds = [];
 

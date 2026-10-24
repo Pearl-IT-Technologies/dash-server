@@ -19,6 +19,7 @@ import uploadRoutes from "./routes/upload";
 import settingsRoutes from "./routes/settings";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
+import { getJwtSecret } from "./middleware/auth";
 
 const app = express();
 const server = createServer(app);
@@ -109,6 +110,11 @@ app.use(errorHandler);
 // Database connection and server startup
 const startServer = async () => {
 	try {
+		// Fail fast on missing secrets
+		getJwtSecret();
+		if (!process.env.PAYSTACK_SECRET_KEY) {
+			console.warn("⚠️ PAYSTACK_SECRET_KEY is not set; Paystack verification will fail");
+		}
 		await connectDatabase();
 		await verifyTransporter();
 		console.log("✅ Database connected successfully");
@@ -138,5 +144,8 @@ process.on("SIGINT", () => {
 	});
 });
 
-startServer();
+// Don't boot the server/DB when imported by tests
+if (process.env.NODE_ENV !== "test") {
+	startServer();
+}
 export default app;

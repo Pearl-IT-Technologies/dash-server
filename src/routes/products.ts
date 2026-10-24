@@ -15,8 +15,9 @@ const router = express.Router()
 
 // Public routes
 router.get('/', getProducts)
-router.get('/:id', getProduct)
+// Must be declared before '/:id', otherwise '/categories' is treated as an id
 router.get('/categories', getProductCategories)
+router.get('/:id', getProduct)
 
 // Protected routes
 router.use(protect) // All routes after this middleware are protected

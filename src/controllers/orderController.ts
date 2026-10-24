@@ -3,12 +3,20 @@ import { Request, Response } from "express";
 import Product from "../models/Product";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
-import { io } from "../index";
 import crypto from "crypto";
+import mongoose from "mongoose";
+import { emitOrderEvent, emitProductEvent } from "../utils/realtime";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
 import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
 import { getStaffMails } from "../utils/GetStaffMails";
 import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
+
+// Amount (kobo) the customer should have been charged: per-item NGN prices are rounded
+// the same way the storefront displays them (see convertProductPrices).
+export const expectedChargeKobo = (items: { price: number; quantity: number }[], shippingUsd: number, rate: number) => {
+	const itemsNgn = items.reduce((sum, item) => sum + Math.round(item.price * rate) * item.quantity, 0);
+	return (itemsNgn + Math.round(shippingUsd * rate)) * 100;
+};
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -98,73 +106,132 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
 // @route   POST /api/orders
 // @access  Private
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
-	const { userId, items, shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
+	const { items, shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
+	// Never trust a userId from the body: use the authenticated user (optionalAuth) or guest
+	const userId = req.user?.id;
 	const lowStocks = [];
 	const outOfStocks = [];
 
-	if (!items || items.length === 0) {
+	if (!Array.isArray(items) || items.length === 0) {
 		throw new AppError("No order items provided", 400);
 	}
 
-	// For Paystack payments, we assume verification was done before this call
-	// But we can still do a quick verification as a safety measure
-	if (paymentMethod === "paystack" && paymentDetails?.reference) {
-		try {
-			const verification = await verifyPaystackPayment(paymentDetails.reference);
-			if (!verification.success || verification.data.status !== "success") {
-				throw new AppError("Invalid payment reference", 400);
-			}
-		} catch (error) {
-			throw new AppError("Payment verification failed", 400);
+	for (const item of items) {
+		if (!item || !mongoose.isValidObjectId(item.productId)) {
+			throw new AppError("Invalid product in order", 400);
+		}
+		if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+			throw new AppError("Invalid item quantity", 400);
 		}
 	}
 
-	// Calculate totals and validate products
+	// Paystack: the reference must be present, unused, and verified with Paystack
+	let paidAmountKobo: number | null = null;
+	const reference: string | undefined = paymentDetails?.reference;
+	if (paymentMethod === "paystack") {
+		if (!reference || typeof reference !== "string") {
+			throw new AppError("Payment reference is required", 400);
+		}
+
+		const existing = await Order.findOne({ "paymentDetails.reference": reference }).select("_id");
+		if (existing) {
+			throw new AppError("This payment reference has already been used", 409);
+		}
+
+		let verification;
+		try {
+			verification = await verifyPaystackPayment(reference);
+		} catch (error) {
+			throw new AppError("Payment verification failed", 400);
+		}
+		if (!verification.success || verification.data?.status !== "success") {
+			throw new AppError("Invalid payment reference", 400);
+		}
+		paidAmountKobo = Number(verification.data.amount);
+	}
+
+	// Calculate totals and atomically reserve stock
 	let subtotal = 0;
 	const orderItems = [];
+	const reserved: { id: any; quantity: number }[] = [];
 
-	for (const item of items) {
-		const product = await Product.findById(item.productId);
-
-		if (!product) {
-			throw new AppError(`Product ${item.productId} not found`, 404);
+	const releaseStock = async () => {
+		for (const r of reserved) {
+			await Product.updateOne({ _id: r.id }, { $inc: { stockCount: r.quantity }, $set: { inStock: true } });
 		}
+	};
 
-		if (!product.inStock || product.stockCount < item.quantity) {
-			throw new AppError(`Insufficient stock for ${product.name}`, 400);
+	try {
+		for (const item of items) {
+			// Conditional decrement: only succeeds if the product is orderable and has enough stock,
+			// so concurrent checkouts can't oversell.
+			const product = await Product.findOneAndUpdate(
+				{
+					_id: item.productId,
+					isActive: true,
+					visibility: { $ne: "private" }, // private-sale items will only be orderable via a valid link
+					stockCount: { $gte: item.quantity },
+				},
+				{ $inc: { stockCount: -item.quantity } },
+				{ new: true },
+			);
+
+			if (!product) {
+				const exists = await Product.findOne({ _id: item.productId, isActive: true, visibility: { $ne: "private" } });
+				if (!exists) {
+					throw new AppError(`Product ${item.productId} not found`, 404);
+				}
+				throw new AppError(`Insufficient stock for ${exists.name}`, 400);
+			}
+			reserved.push({ id: product._id, quantity: item.quantity });
+
+			const itemTotal = product.price * item.quantity;
+			subtotal += itemTotal;
+
+			orderItems.push({
+				product: product._id,
+				name: product.name,
+				price: product.price,
+				quantity: item.quantity,
+				size: item.size,
+				color: item.color,
+				image: product.images[0],
+			});
+
+			if (product.stockCount === 0) {
+				await Product.updateOne({ _id: product._id }, { $set: { inStock: false } });
+				product.inStock = false;
+				outOfStocks.push(product);
+			} else if (product.stockCount < 10) {
+				lowStocks.push(product);
+			}
+
+			// Emit real-time product update
+			emitProductEvent("inventory-updated", product);
 		}
-
-		const itemTotal = product.price * item.quantity;
-		subtotal += itemTotal;
-
-		orderItems.push({
-			product: product._id,
-			name: product.name,
-			price: product.price,
-			quantity: item.quantity,
-			size: item.size,
-			color: item.color,
-			image: product.images[0],
-		});
-
-		// Update product stock
-		product.stockCount -= item.quantity;
-
-		if (product.stockCount === 0) {
-			product.inStock = false;
-			outOfStocks.push(product);
-		} else if (product.stockCount < 10) {
-			lowStocks.push(product);
-		}
-		await product.save();
-
-		// Emit real-time product update
-		io.emit("inventory-updated", product);
+	} catch (error) {
+		await releaseStock();
+		throw error;
 	}
 
 	// Calculate shipping (free shipping for orders over $30 USD)
 	const shipping = subtotal > 30 ? 0 : 5; // $5 shipping fee
 	const total = subtotal + shipping;
+
+	// Verify the amount actually charged by Paystack covers the server-computed total.
+	// The payment is already captured at this point, so on a shortfall we still record the
+	// order but leave it unpaid/pending for staff review instead of losing it.
+	let paymentOk = false;
+	let reviewNote: string | undefined;
+	if (paymentMethod === "paystack" && paidAmountKobo !== null) {
+		const rate = await getExchangeRate();
+		const expectedKobo = expectedChargeKobo(orderItems, shipping, rate);
+		if (paidAmountKobo >= expectedKobo) {
+			paymentOk = true;
+		} else {
+			reviewNote = `NEEDS REVIEW: Paystack charged ${paidAmountKobo / 100} NGN, expected ${expectedKobo / 100} NGN`;
+		}
+	}
 
 	// Generate order number
 	const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -181,15 +248,22 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		billingAddress: billingAddress || shippingAddress,
 		paymentMethod,
 		paymentDetails,
-		status: paymentMethod === "paystack" ? "confirmed" : "pending",
-		paymentStatus: paymentMethod === "paystack" ? "paid" : "pending",
+		status: paymentOk ? "confirmed" : "pending",
+		paymentStatus: paymentOk ? "paid" : "pending",
+		notes: reviewNote,
+	}).catch(async (error: any) => {
+		await releaseStock();
+		if (error?.code === 11000) {
+			throw new AppError("This payment reference has already been used", 409);
+		}
+		throw error;
 	});
 
 	// Populate the order with product details
 	await order.populate("items.product");
 
-	// Emit real-time update
-	io.emit("order-created", order);
+	// Emit real-time update (staff + owning user only)
+	emitOrderEvent("order-created", order, order.user);
 
 	// Notify user about new order
 	if (order.billingAddress?.email) {
@@ -348,7 +422,7 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 		.populate("items.product", "name images");
 
 	// Emit real-time update
-	io.emit("order-updated", order);
+	emitOrderEvent("order-updated", order, order?.user);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);
@@ -378,10 +452,14 @@ export const updateOrderStatus = asyncHandler(async (req: Request, res: Response
 	}
 
 	// Emit real-time update
-	io.emit("order-updated", {
-		orderId: order._id,
-		status: order.status,
-	});
+	emitOrderEvent(
+		"order-updated",
+		{
+			orderId: order._id,
+			status: order.status,
+		},
+		order.user,
+	);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);
@@ -412,12 +490,7 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 
 	// Restore product stock
 	for (const item of order.items) {
-		const product = await Product.findById(item.product);
-		if (product) {
-			product.stockCount += item.quantity;
-			product.inStock = true;
-			await product.save();
-		}
+		await Product.updateOne({ _id: item.product }, { $inc: { stockCount: item.quantity }, $set: { inStock: true } });
 	}
 
 	order.status = "cancelled";
@@ -426,10 +499,14 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 	await order.save();
 
 	// Emit real-time update
-	io.emit("order-updated", {
-		orderId: order._id,
-		status: order.status,
-	});
+	emitOrderEvent(
+		"order-updated",
+		{
+			orderId: order._id,
+			status: order.status,
+		},
+		order.user,
+	);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);

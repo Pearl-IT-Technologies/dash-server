@@ -211,7 +211,7 @@ const OrderSchema = new Schema<IOrder>(
 		toJSON: {
 			transform: function (doc, ret) {
 				ret.id = ret._id;
-				delete ret.__v;
+				delete (ret as any).__v;
 				return ret;
 			},
 		},
@@ -221,6 +221,11 @@ const OrderSchema = new Schema<IOrder>(
 
 //Index
 OrderSchema.index({ createdAt: -1 });
+// A Paystack reference can only ever back one order
+OrderSchema.index(
+	{ "paymentDetails.reference": 1 },
+	{ unique: true, partialFilterExpression: { "paymentDetails.reference": { $type: "string" } } },
+);
 
 const Order = mongoose.model<IOrder>("Order", OrderSchema);
 

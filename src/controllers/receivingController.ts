@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { Receiving } from "../models/Receiving";
 import { asyncHandler } from "../utils/asyncHandler";
 import Product from "../models/Product";
-import { io } from "../index";
+import { emitProductEvent } from "../utils/realtime";
 
 // @desc    Record new stock received
 // @route   POST /api/receiving
@@ -33,7 +33,7 @@ export const recordReceiving = asyncHandler(async (req: Request, res: Response) 
 	product.stockCount += quantity;
 	await product.save();
 
-	io.emit("inventory-updated", product);
+	emitProductEvent("inventory-updated", product);
 
 	res.status(201).json({
 		success: true,
