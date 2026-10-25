@@ -7,6 +7,7 @@ jest.mock("../src/services/emailService", () => ({
 	orderPlacedMail: jest.fn(),
 	staffOrderNotificationMail: jest.fn(),
 	stockAlertMail: jest.fn(),
+	paymentRejectedAlertMail: jest.fn(),
 }));
 jest.mock("../src/utils/GetStaffMails", () => ({ getStaffMails: jest.fn().mockResolvedValue([]) }));
 

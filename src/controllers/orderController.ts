@@ -7,7 +7,12 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { emitOrderEvent, emitProductEvent } from "../utils/realtime";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
-import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
+import {
+	orderPlacedMail,
+	paymentRejectedAlertMail,
+	staffOrderNotificationMail,
+	stockAlertMail,
+} from "../services/emailService";
 import { getStaffMails } from "../utils/GetStaffMails";
 import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
 import { buildQuote } from "../utils/pricing";
@@ -189,10 +194,60 @@ export const quoteOrder = asyncHandler(async (req: Request, res: Response) => {
 	});
 });
 
+// Recipients for operational alerts: ALERT_EMAIL (comma-separated) or every admin user
+const getAlertRecipients = async (): Promise<string[]> => {
+	const configured = (process.env.ALERT_EMAIL || "")
+		.split(",")
+		.map((email) => email.trim())
+		.filter(Boolean);
+	return configured.length ? configured : getStaffMails(["admin"]);
+};
+
+// If an order fails after the customer was actually charged, tell staff so they can refund or complete it.
+// Never throws: alerting must not change the response the customer gets.
+const alertIfPaymentCaptured = async (req: Request, error: any) => {
+	try {
+		const { paymentMethod, paymentDetails, shippingAddress, billingAddress, privateLinkToken } = req.body || {};
+		const reference = paymentDetails?.reference;
+		if (paymentMethod !== "paystack" || !reference || typeof reference !== "string") return;
+		// 409: the reference already backs an existing order, so no money is unaccounted for
+		if (error?.statusCode === 409) return;
+
+		let verification = (req as any).paystackVerification;
+		if (!verification) {
+			verification = await verifyPaystackPayment(reference);
+		}
+		if (!verification?.success || verification.data?.status !== "success") return;
+		if (await Order.exists({ "paymentDetails.reference": reference })) return;
+
+		const recipients = await getAlertRecipients();
+		if (!recipients.length) return;
+
+		await paymentRejectedAlertMail(recipients, {
+			reference,
+			amountNGN: typeof verification.data.amount === "number" ? verification.data.amount / 100 : undefined,
+			customerEmail: billingAddress?.email || shippingAddress?.email || verification.data.customer?.email,
+			reason: error?.message || "Unknown error",
+			privateLink: !!privateLinkToken,
+		});
+	} catch (alertError) {
+		console.error("Failed to send payment-rejected alert:", alertError);
+	}
+};
+
 // @desc    Create order
 // @route   POST /api/orders
 // @access  Public (guest) / optional auth
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
+	try {
+		await placeOrder(req, res);
+	} catch (error) {
+		await alertIfPaymentCaptured(req, error);
+		throw error;
+	}
+});
+
+const placeOrder = async (req: Request, res: Response) => {
 	const { shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
 	// Never trust a userId from the body: use the authenticated user (optionalAuth) or guest
 	const userId = req.user?.id;
@@ -230,6 +285,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		if (!verification.success || verification.data?.status !== "success") {
 			throw new AppError("Invalid payment reference", 400);
 		}
+		(req as any).paystackVerification = verification; // reused by the failure alert
 
 		const paidKobo = Number(verification.data.amount);
 		const currency = verification.data.currency;
@@ -414,7 +470,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(201).json(convertedOrder);
-});
+};
 
 // @desc    Track order publicly (no auth required)
 // @route   GET /api/orders/track/:orderNumber
