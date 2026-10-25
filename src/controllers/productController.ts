@@ -117,6 +117,10 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 	}
 
 	const convertedProduct = await convertProductPrices(product);
+	if (product.visibility === "private" || !product.isActive) {
+		// Drop it from public storefronts that hold it in memory (no-op if it wasn't public)
+		emitProductDeleted({ id: product.id, visibility: "public", isActive: true });
+	}
 	emitProductEvent("inventory-updated", convertedProduct);
 	res.status(200).json(convertedProduct);
 });
