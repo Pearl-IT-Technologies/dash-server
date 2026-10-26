@@ -178,6 +178,34 @@ describe("private link management", () => {
 		delete process.env.CLIENT_URL;
 	});
 
+	it("lets staff re-copy the link URL later, and flags legacy links", async () => {
+		const p = await makeProduct();
+		const { token } = await tokenFor("salesrep");
+		const created = (await createLink(token, { title: "x", items: [{ product: p.id, quantity: 1 }] })).body;
+		expect(created.tokenNonce).toBeUndefined();
+		const listed = await request(app).get("/api/private-links").set("Authorization", `Bearer ${token}`);
+		expect(listed.body[0].recopyable).toBe(true);
+		expect(listed.body[0].tokenNonce).toBeUndefined();
+
+		const again = await request(app).get(`/api/private-links/${created.id}/url`).set("Authorization", `Bearer ${token}`);
+		expect(again.status).toBe(200);
+		expect(again.body).toMatchObject({ url: created.url, legacy: false });
+		expect((await request(app).get(again.body.url.replace("https://www.dashshops.com/p/", "/api/private-links/resolve/"))).status).toBe(200);
+
+		const customer = await tokenFor("customer");
+		expect((await request(app).get(`/api/private-links/${created.id}/url`).set("Authorization", `Bearer ${customer.token}`)).status).toBe(403);
+
+		// Legacy link: only a hash exists
+		await PrivateLink.updateOne({ _id: created.id }, { $set: { tokenNonce: null } });
+		const legacy = await request(app).get(`/api/private-links/${created.id}/url`).set("Authorization", `Bearer ${token}`);
+		expect(legacy.body).toMatchObject({ url: null, legacy: true });
+
+		// Secret rotated: never return a wrong URL
+		await PrivateLink.updateOne({ _id: created.id }, { $set: { tokenNonce: "other" } });
+		const rotated = await request(app).get(`/api/private-links/${created.id}/url`).set("Authorization", `Bearer ${token}`);
+		expect(rotated.body).toMatchObject({ url: null, unrecoverable: true });
+	});
+
 	it("validates preset variants and quantities", async () => {
 		const p = await makeProduct();
 		const { token } = await tokenFor("admin");

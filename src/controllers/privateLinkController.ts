@@ -1,7 +1,7 @@
 // controllers/privateLinkController.ts
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import PrivateLink, { DEFAULT_LINK_TTL_HOURS, generateLinkToken, hashLinkToken } from "../models/PrivateLink";
+import PrivateLink, { DEFAULT_LINK_TTL_HOURS, deriveLinkToken, generateLinkToken, hashLinkToken } from "../models/PrivateLink";
 import PrivateLinkEvent, { logLinkEvent } from "../models/PrivateLinkEvent";
 import Product from "../models/Product";
 import Order from "../models/Order";
@@ -83,9 +83,10 @@ export const createPrivateLink = asyncHandler(async (req: Request, res: Response
 		throw new AppError("Title is required", 400);
 	}
 
-	const token = generateLinkToken();
+	const { token, nonce } = generateLinkToken();
 	const link = await PrivateLink.create({
 		tokenHash: hashLinkToken(token),
+		tokenNonce: nonce,
 		title,
 		note,
 		items: await parseItems(req.body.items),
@@ -96,7 +97,6 @@ export const createPrivateLink = asyncHandler(async (req: Request, res: Response
 
 	await logLinkEvent({ link: link._id as any, action: "created", actor: req.user!.id as any, ip: getRealClientIp(req) });
 
-	// The raw token/url is only ever returned here
 	res.status(201).json({ ...link.toJSON(), token, url: linkUrl(token) });
 });
 
@@ -105,6 +105,7 @@ export const createPrivateLink = asyncHandler(async (req: Request, res: Response
 // @access  Private (Admin/Staff)
 export const getPrivateLinks = asyncHandler(async (req: Request, res: Response) => {
 	const links = await PrivateLink.find()
+		.select("+tokenNonce")
 		.sort({ createdAt: -1 })
 		.populate("createdBy", "firstName lastName role")
 		.populate("items.product", "name images sku visibility");
@@ -121,6 +122,7 @@ export const getPrivateLink = asyncHandler(async (req: Request, res: Response) =
 		throw new AppError("Private link not found", 404);
 	}
 	const link = await PrivateLink.findById(req.params.id)
+		.select("+tokenNonce")
 		.populate("createdBy", "firstName lastName role")
 		.populate("revokedBy", "firstName lastName role")
 		.populate("items.product", "name images sku price stockCount visibility isActive");
@@ -132,6 +134,32 @@ export const getPrivateLink = asyncHandler(async (req: Request, res: Response) =
 		Order.find({ privateLink: link._id }).select("orderNumber status paymentStatus total createdAt notes"),
 	]);
 	res.status(200).json({ ...link.toJSON(), events, orders });
+});
+
+// @desc    Get a link's shareable URL again (rebuilt from its nonce; legacy links return url: null)
+// @route   GET /api/private-links/:id/url
+// @access  Private (Admin/Staff)
+export const getPrivateLinkUrl = asyncHandler(async (req: Request, res: Response) => {
+	if (!mongoose.isValidObjectId(req.params.id)) {
+		throw new AppError("Private link not found", 404);
+	}
+	const link = await PrivateLink.findById(req.params.id).select("+tokenHash +tokenNonce");
+	if (!link) {
+		throw new AppError("Private link not found", 404);
+	}
+
+	let body: Record<string, any>;
+	if (!link.tokenNonce) {
+		body = { url: null, legacy: true };
+	} else {
+		const token = deriveLinkToken(link.tokenNonce);
+		// If the secret changed since creation the derived token no longer matches; never return a wrong URL
+		body =
+			hashLinkToken(token) === link.tokenHash
+				? { url: linkUrl(token), legacy: false }
+				: { url: null, legacy: false, unrecoverable: true };
+	}
+	res.status(200).json({ ...body, status: link.status });
 });
 
 // @desc    Update a private link (title, note, items, expiry, maxUses)

@@ -7,6 +7,7 @@ import {
 	updatePrivateLink,
 	revokePrivateLink,
 	resolvePrivateLink,
+	getPrivateLinkUrl,
 } from "../controllers/privateLinkController";
 import { protect, restrictTo } from "../middleware/auth";
 
@@ -30,5 +31,6 @@ router.use(protect, restrictTo("admin", "salesrep", "storekeeper"));
 router.route("/").get(getPrivateLinks).post(createPrivateLink);
 router.route("/:id").get(getPrivateLink).patch(updatePrivateLink);
 router.post("/:id/revoke", revokePrivateLink);
+router.get("/:id/url", getPrivateLinkUrl);
 
 export default router;
