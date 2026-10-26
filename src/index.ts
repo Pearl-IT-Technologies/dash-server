@@ -34,6 +34,8 @@ export const io = new Server(server, {
 		origin: [
 			`${process.env.CLIENT_URL || "http://www.dashshops.com"}`,
 			"https://dash-ng-shop-client.vercel.app",
+			"https://www.dashshops.com",
+			"https://dashshops.com",
 		],
 		methods: ["GET", "POST"],
 	},

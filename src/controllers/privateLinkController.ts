@@ -12,7 +12,9 @@ import { getRealClientIp } from "../utils/GetIp";
 
 const MAX_TTL_HOURS = 24 * 90;
 
-const linkUrl = (token: string) => `${(process.env.CLIENT_URL || "http://www.dashshops.com").replace(/\/$/, "")}/p/${token}`;
+// Public storefront domain for shareable links (independent of CLIENT_URL, which is used for CORS)
+const linkUrl = (token: string) =>
+	`${(process.env.PRIVATE_LINK_BASE_URL || "https://www.dashshops.com").replace(/\/+$/, "")}/p/${token}`;
 
 // Validate and normalise preset cart items: product + optional size/color + quantity
 const parseItems = async (items: any) => {
