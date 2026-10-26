@@ -352,3 +352,65 @@ describe("private link checkout", () => {
 		expect((await PrivateLink.findById(link.id))!.uses).toBe(0);
 	});
 });
+
+describe("item spec mode", () => {
+	const make = async (item: any, productOverrides: any = {}) => {
+		const p = await makeProduct({ sizes: ["S", "M", "L"], colors: ["red", "blue"], ...productOverrides });
+		const { token: auth } = await tokenFor("admin");
+		const res = await createLink(auth, { title: "Spec", items: [{ product: p.id, quantity: 1, ...item(p) }] });
+		return { p, res, link: res.body };
+	};
+
+	it("defaults to locked and ignores buyer selections", async () => {
+		const { link } = await make(() => ({ size: "M", color: "red" }));
+		expect(link.items[0].specMode).toBe("locked");
+		mockPaid(kobo(100));
+		const res = await checkout(link.token, undefined, { selections: [{ size: "L", color: "blue" }] });
+		expect(res.status).toBe(201);
+		expect((await Order.findOne())!.items[0]).toMatchObject({ size: "M", color: "red" });
+	});
+
+	it("exposes options on resolve and accepts a valid buyer choice", async () => {
+		const { link } = await make(() => ({ specMode: "choosable", allowedSizes: ["M", "L"] }));
+		const resolved = await request(app).get(`/api/private-links/resolve/${link.token}`);
+		expect(resolved.body.items[0]).toMatchObject({
+			specMode: "choosable",
+			sizeOptions: ["M", "L"],
+			colorOptions: ["red", "blue"],
+		});
+		expect(resolved.body.items[0].product.description).toBeDefined();
+
+		const quote = await request(app)
+			.post("/api/orders/quote")
+			.send({ privateLinkToken: link.token, selections: [{ size: "L", color: "blue" }] });
+		expect(quote.status).toBe(200);
+		expect(quote.body.items[0]).toMatchObject({ size: "L", color: "blue" });
+
+		mockPaid(kobo(100));
+		const res = await checkout(link.token, undefined, { selections: [{ size: "L", color: "blue" }] });
+		expect(res.status).toBe(201);
+		expect((await Order.findOne())!.items[0]).toMatchObject({ size: "L", color: "blue" });
+	});
+
+	it("rejects selections outside the allowed options or missing ones", async () => {
+		const { link } = await make(() => ({ specMode: "choosable", allowedSizes: ["M"] }));
+		mockPaid(kobo(100));
+		expect((await checkout(link.token, undefined, { selections: [{ size: "S", color: "red" }] })).status).toBe(400);
+		expect((await checkout(link.token, undefined, { selections: [{ size: "M", color: "green" }] })).status).toBe(400);
+		expect((await checkout(link.token)).status).toBe(400);
+		expect(await Order.countDocuments()).toBe(0);
+	});
+
+	it("rejects allowed options the product does not have", async () => {
+		const { res } = await make(() => ({ specMode: "choosable", allowedSizes: ["XXL"] }));
+		expect(res.status).toBe(400);
+	});
+
+	it("still checks stock for the chosen variant (product-level stock)", async () => {
+		const { link, p } = await make(() => ({ specMode: "choosable" }), { stockCount: 0 });
+		mockPaid(kobo(100));
+		const res = await checkout(link.token, undefined, { selections: [{ size: "S", color: "red" }] });
+		expect(res.status).toBe(400);
+		expect((await Product.findById(p.id))!.stockCount).toBe(0);
+	});
+});
