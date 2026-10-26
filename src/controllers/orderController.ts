@@ -3,12 +3,23 @@ import { Request, Response } from "express";
 import Product from "../models/Product";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
-import { io } from "../index";
 import crypto from "crypto";
+import mongoose from "mongoose";
+import { emitOrderEvent, emitProductEvent } from "../utils/realtime";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
-import { orderPlacedMail, staffOrderNotificationMail, stockAlertMail } from "../services/emailService";
+import {
+	orderPlacedMail,
+	paymentRejectedAlertMail,
+	staffOrderNotificationMail,
+	stockAlertMail,
+} from "../services/emailService";
 import { getStaffMails } from "../utils/GetStaffMails";
 import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
+import { buildQuote } from "../utils/pricing";
+import { PUBLIC_PRODUCT_FILTER } from "../utils/productVisibility";
+import PrivateLink, { hashLinkToken, usableLinkFilter } from "../models/PrivateLink";
+import { logLinkEvent } from "../models/PrivateLinkEvent";
+import { getRealClientIp } from "../utils/GetIp";
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -94,77 +105,274 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
 	}
 });
 
-// @desc    Create order
-// @route   POST /api/orders
-// @access  Private
-export const createOrder = asyncHandler(async (req: Request, res: Response) => {
-	const { userId, items, shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
-	const lowStocks = [];
-	const outOfStocks = [];
+interface CartLine {
+	product: any;
+	quantity: number;
+	size?: string;
+	color?: string;
+}
 
-	if (!items || items.length === 0) {
-		throw new AppError("No order items provided", 400);
-	}
+// Resolve what is being bought into product documents without touching stock.
+// With a private link token the link's preset cart is used and the body's items are ignored.
+const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }> => {
+	const { items, privateLinkToken } = body;
+	let link: any = null;
+	let requested: { productId: any; quantity: number; size?: string; color?: string }[];
 
-	// For Paystack payments, we assume verification was done before this call
-	// But we can still do a quick verification as a safety measure
-	if (paymentMethod === "paystack" && paymentDetails?.reference) {
-		try {
-			const verification = await verifyPaystackPayment(paymentDetails.reference);
-			if (!verification.success || verification.data.status !== "success") {
-				throw new AppError("Invalid payment reference", 400);
-			}
-		} catch (error) {
-			throw new AppError("Payment verification failed", 400);
+	if (privateLinkToken !== undefined && privateLinkToken !== null && privateLinkToken !== "") {
+		if (typeof privateLinkToken !== "string") {
+			throw new AppError("Private link not found", 404);
 		}
-	}
-
-	// Calculate totals and validate products
-	let subtotal = 0;
-	const orderItems = [];
-
-	for (const item of items) {
-		const product = await Product.findById(item.productId);
-
-		if (!product) {
-			throw new AppError(`Product ${item.productId} not found`, 404);
+		link = await PrivateLink.findOne({ tokenHash: hashLinkToken(privateLinkToken) });
+		if (!link) {
+			throw new AppError("Private link not found", 404);
 		}
-
-		if (!product.inStock || product.stockCount < item.quantity) {
-			throw new AppError(`Insufficient stock for ${product.name}`, 400);
-		}
-
-		const itemTotal = product.price * item.quantity;
-		subtotal += itemTotal;
-
-		orderItems.push({
-			product: product._id,
-			name: product.name,
-			price: product.price,
+		requested = link.items.map((item: any) => ({
+			productId: item.product,
 			quantity: item.quantity,
 			size: item.size,
 			color: item.color,
-			image: product.images[0],
-		});
-
-		// Update product stock
-		product.stockCount -= item.quantity;
-
-		if (product.stockCount === 0) {
-			product.inStock = false;
-			outOfStocks.push(product);
-		} else if (product.stockCount < 10) {
-			lowStocks.push(product);
+		}));
+	} else {
+		if (!Array.isArray(items) || items.length === 0) {
+			throw new AppError("No order items provided", 400);
 		}
-		await product.save();
-
-		// Emit real-time product update
-		io.emit("inventory-updated", product);
+		for (const item of items) {
+			if (!item || !mongoose.isValidObjectId(item.productId)) {
+				throw new AppError("Invalid product in order", 400);
+			}
+			if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+				throw new AppError("Invalid item quantity", 400);
+			}
+		}
+		requested = items;
 	}
 
-	// Calculate shipping (free shipping for orders over $30 USD)
-	const shipping = subtotal > 30 ? 0 : 5; // $5 shipping fee
-	const total = subtotal + shipping;
+	const lines: CartLine[] = [];
+	for (const item of requested) {
+		// Private-sale products are only reachable through a link
+		const filter = link ? { _id: item.productId, isActive: true } : { _id: item.productId, ...PUBLIC_PRODUCT_FILTER };
+		const product = await Product.findOne(filter);
+		if (!product) {
+			throw new AppError(link ? "An item on this private link is no longer available" : `Product ${item.productId} not found`, 404);
+		}
+		lines.push({ product, quantity: item.quantity, size: item.size, color: item.color });
+	}
+
+	return { link, lines };
+};
+
+// @desc    Quote an order (items or private link): exact amount the client must charge
+// @route   POST /api/orders/quote
+// @access  Public
+export const quoteOrder = asyncHandler(async (req: Request, res: Response) => {
+	const { link, lines } = await resolveCart(req.body);
+	if (link && link.status !== "active") {
+		throw new AppError("Private link not found", 404);
+	}
+
+	const quote = await buildQuote(lines.map((line) => ({ price: line.product.price, quantity: line.quantity })));
+
+	res.status(200).json({
+		currency: "NGN",
+		items: lines.map((line) => ({
+			productId: line.product.id,
+			name: line.product.name,
+			image: line.product.images[0],
+			size: line.size,
+			color: line.color,
+			quantity: line.quantity,
+			unitPriceNGN: Math.round(line.product.price * quote.rate),
+			available: line.product.stockCount >= line.quantity,
+		})),
+		subtotal: quote.subtotalNGN,
+		shipping: quote.shippingNGN,
+		total: quote.totalNGN,
+		amountKobo: quote.amountKobo,
+		shippingRule: quote.shippingRule,
+		...(link && { privateLink: { title: link.title, expiresAt: link.expiresAt } }),
+	});
+});
+
+// Recipients for operational alerts: ALERT_EMAIL (comma-separated) or every admin user
+const getAlertRecipients = async (): Promise<string[]> => {
+	const configured = (process.env.ALERT_EMAIL || "")
+		.split(",")
+		.map((email) => email.trim())
+		.filter(Boolean);
+	return configured.length ? configured : getStaffMails(["admin"]);
+};
+
+// If an order fails after the customer was actually charged, tell staff so they can refund or complete it.
+// Never throws: alerting must not change the response the customer gets.
+const alertIfPaymentCaptured = async (req: Request, error: any) => {
+	try {
+		const { paymentMethod, paymentDetails, shippingAddress, billingAddress, privateLinkToken } = req.body || {};
+		const reference = paymentDetails?.reference;
+		if (paymentMethod !== "paystack" || !reference || typeof reference !== "string") return;
+		// 409: the reference already backs an existing order, so no money is unaccounted for
+		if (error?.statusCode === 409) return;
+
+		let verification = (req as any).paystackVerification;
+		if (!verification) {
+			verification = await verifyPaystackPayment(reference);
+		}
+		if (!verification?.success || verification.data?.status !== "success") return;
+		if (await Order.exists({ "paymentDetails.reference": reference })) return;
+
+		const recipients = await getAlertRecipients();
+		if (!recipients.length) return;
+
+		await paymentRejectedAlertMail(recipients, {
+			reference,
+			amountNGN: typeof verification.data.amount === "number" ? verification.data.amount / 100 : undefined,
+			customerEmail: billingAddress?.email || shippingAddress?.email || verification.data.customer?.email,
+			reason: error?.message || "Unknown error",
+			privateLink: !!privateLinkToken,
+		});
+	} catch (alertError) {
+		console.error("Failed to send payment-rejected alert:", alertError);
+	}
+};
+
+// @desc    Create order
+// @route   POST /api/orders
+// @access  Public (guest) / optional auth
+export const createOrder = asyncHandler(async (req: Request, res: Response) => {
+	try {
+		await placeOrder(req, res);
+	} catch (error) {
+		await alertIfPaymentCaptured(req, error);
+		throw error;
+	}
+});
+
+const placeOrder = async (req: Request, res: Response) => {
+	const { shippingAddress, billingAddress, paymentMethod, paymentDetails } = req.body;
+	// Never trust a userId from the body: use the authenticated user (optionalAuth) or guest
+	const userId = req.user?.id;
+	const lowStocks = [];
+	const outOfStocks = [];
+
+	const { link, lines } = await resolveCart(req.body);
+
+	if (link && paymentMethod !== "paystack") {
+		throw new AppError("Private link orders must be paid with Paystack", 400);
+	}
+
+	const quote = await buildQuote(lines.map((line) => ({ price: line.product.price, quantity: line.quantity })));
+
+	// Paystack: the reference must be present, unused, verified, and for exactly the quoted amount.
+	// Any mismatch is rejected outright: no order, no stock change.
+	let paymentVerified = false;
+	const reference: string | undefined = paymentDetails?.reference;
+	if (paymentMethod === "paystack") {
+		if (!reference || typeof reference !== "string") {
+			throw new AppError("Payment reference is required", 400);
+		}
+
+		const existing = await Order.findOne({ "paymentDetails.reference": reference }).select("_id");
+		if (existing) {
+			throw new AppError("This payment reference has already been used", 409);
+		}
+
+		let verification;
+		try {
+			verification = await verifyPaystackPayment(reference);
+		} catch (error) {
+			throw new AppError("Payment verification failed", 400);
+		}
+		if (!verification.success || verification.data?.status !== "success") {
+			throw new AppError("Invalid payment reference", 400);
+		}
+		(req as any).paystackVerification = verification; // reused by the failure alert
+
+		const paidKobo = Number(verification.data.amount);
+		const currency = verification.data.currency;
+		if (paidKobo !== quote.amountKobo || (currency && currency !== "NGN")) {
+			console.error(
+				`Payment amount mismatch for ${reference}: charged ${paidKobo} ${currency || ""}, expected ${quote.amountKobo} NGN`,
+			);
+			throw new AppError(
+				`Payment amount mismatch: charged ${paidKobo / 100} NGN but the order total is ${quote.totalNGN} NGN. No order was created.`,
+				400,
+			);
+		}
+		paymentVerified = true;
+	}
+
+	// Atomically reserve stock
+	const orderItems = [];
+	const reserved: { id: any; quantity: number }[] = [];
+	let linkUseConsumed = false;
+
+	const rollback = async () => {
+		for (const r of reserved) {
+			await Product.updateOne({ _id: r.id }, { $inc: { stockCount: r.quantity }, $set: { inStock: true } });
+		}
+		if (linkUseConsumed) {
+			await PrivateLink.updateOne({ _id: link._id }, { $inc: { uses: -1 } });
+		}
+	};
+
+	try {
+		for (const line of lines) {
+			// Conditional decrement: only succeeds if still orderable with enough stock,
+			// so concurrent checkouts can't oversell.
+			const baseFilter = link ? { isActive: true } : PUBLIC_PRODUCT_FILTER;
+			const product = await Product.findOneAndUpdate(
+				{ _id: line.product._id, ...baseFilter, stockCount: { $gte: line.quantity } },
+				{ $inc: { stockCount: -line.quantity } },
+				{ new: true },
+			);
+
+			if (!product) {
+				throw new AppError(`Insufficient stock for ${line.product.name}`, 400);
+			}
+			reserved.push({ id: product._id, quantity: line.quantity });
+
+			orderItems.push({
+				product: product._id,
+				name: product.name,
+				price: line.product.price, // the quoted price that was charged
+				quantity: line.quantity,
+				size: line.size,
+				color: line.color,
+				image: product.images[0],
+			});
+
+			if (product.stockCount === 0) {
+				await Product.updateOne({ _id: product._id }, { $set: { inStock: false } });
+				product.inStock = false;
+				outOfStocks.push(product);
+			} else if (product.stockCount < 10) {
+				lowStocks.push(product);
+			}
+
+			emitProductEvent("inventory-updated", product);
+		}
+	} catch (error) {
+		await rollback();
+		throw error;
+	}
+
+	// Private link: consume one use atomically. If the link expired, was revoked or ran out of
+	// uses between quote and payment, the customer has already paid the exact amount, so keep
+	// the order in a pending state for staff/salesrep to resolve manually.
+	let reviewNote: string | undefined;
+	if (link) {
+		const consumed = await PrivateLink.findOneAndUpdate(
+			{ _id: link._id, ...usableLinkFilter() },
+			{ $inc: { uses: 1 } },
+			{ new: true },
+		);
+		if (consumed) {
+			linkUseConsumed = true;
+		} else {
+			const current = await PrivateLink.findById(link._id);
+			reviewNote = `NEEDS REVIEW: private link "${link.title}" was ${current?.status || "unavailable"} when the order was placed`;
+		}
+	}
 
 	// Generate order number
 	const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -173,23 +381,41 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 		orderNumber,
 		user: userId || undefined,
 		items: orderItems,
-		subtotal,
-		shipping,
+		subtotal: quote.subtotalUSD,
+		shipping: quote.shippingUSD,
 		tax: 0, // Assuming no tax for simplicity, can be added later
-		total,
+		total: quote.totalUSD,
 		shippingAddress,
 		billingAddress: billingAddress || shippingAddress,
 		paymentMethod,
 		paymentDetails,
-		status: paymentMethod === "paystack" ? "confirmed" : "pending",
-		paymentStatus: paymentMethod === "paystack" ? "paid" : "pending",
+		status: paymentVerified && !reviewNote ? "confirmed" : "pending",
+		paymentStatus: paymentVerified ? "paid" : "pending",
+		notes: reviewNote,
+		source: link ? "private_link" : "public",
+		privateLink: link?._id,
+	}).catch(async (error: any) => {
+		await rollback();
+		if (error?.code === 11000) {
+			throw new AppError("This payment reference has already been used", 409);
+		}
+		throw error;
 	});
 
-	// Populate the order with product details
+	if (link) {
+		await logLinkEvent({
+			link: link._id,
+			action: reviewNote ? "order_needs_review" : "ordered",
+			order: order._id as any,
+			ip: getRealClientIp(req),
+			details: reviewNote ? { note: reviewNote } : undefined,
+		});
+	}
+
 	await order.populate("items.product");
 
-	// Emit real-time update
-	io.emit("order-created", order);
+	// Emit real-time update (staff + owning user only)
+	emitOrderEvent("order-created", order, order.user);
 
 	// Notify user about new order
 	if (order.billingAddress?.email) {
@@ -244,7 +470,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(201).json(convertedOrder);
-});
+};
 
 // @desc    Track order publicly (no auth required)
 // @route   GET /api/orders/track/:orderNumber
@@ -348,7 +574,7 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 		.populate("items.product", "name images");
 
 	// Emit real-time update
-	io.emit("order-updated", order);
+	emitOrderEvent("order-updated", order, order?.user);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);
@@ -378,10 +604,14 @@ export const updateOrderStatus = asyncHandler(async (req: Request, res: Response
 	}
 
 	// Emit real-time update
-	io.emit("order-updated", {
-		orderId: order._id,
-		status: order.status,
-	});
+	emitOrderEvent(
+		"order-updated",
+		{
+			orderId: order._id,
+			status: order.status,
+		},
+		order.user,
+	);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);
@@ -412,12 +642,7 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 
 	// Restore product stock
 	for (const item of order.items) {
-		const product = await Product.findById(item.product);
-		if (product) {
-			product.stockCount += item.quantity;
-			product.inStock = true;
-			await product.save();
-		}
+		await Product.updateOne({ _id: item.product }, { $inc: { stockCount: item.quantity }, $set: { inStock: true } });
 	}
 
 	order.status = "cancelled";
@@ -426,10 +651,14 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 	await order.save();
 
 	// Emit real-time update
-	io.emit("order-updated", {
-		orderId: order._id,
-		status: order.status,
-	});
+	emitOrderEvent(
+		"order-updated",
+		{
+			orderId: order._id,
+			status: order.status,
+		},
+		order.user,
+	);
 
 	const convertedOrder = await convertOrderPrices(order);
 	res.status(200).json(convertedOrder);

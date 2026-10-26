@@ -518,6 +518,27 @@ export async function adminMail(recipients: string | string[], subject: string, 
 	}
 }
 
+// Staff alert: a Paystack payment was captured but no order was created
+export async function paymentRejectedAlertMail(
+	recipients: string | string[],
+	details: { reference: string; amountNGN?: number; customerEmail?: string; reason: string; privateLink?: boolean },
+) {
+	const escape = (value: string) =>
+		value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+	const bodyContent = `
+		<h2>Payment captured, order rejected</h2>
+		<p>A customer was charged on Paystack but their order was not created. Please review and refund or complete it manually.</p>
+		<ul>
+			<li><strong>Paystack reference:</strong> ${escape(details.reference)}</li>
+			<li><strong>Amount charged:</strong> ${details.amountNGN !== undefined ? `NGN ${details.amountNGN.toLocaleString("en-NG")}` : "unknown"}</li>
+			<li><strong>Customer email:</strong> ${details.customerEmail ? escape(details.customerEmail) : "unknown"}</li>
+			<li><strong>Reason:</strong> ${escape(details.reason)}</li>
+			<li><strong>Checkout:</strong> ${details.privateLink ? "private sale link" : "public store"}</li>
+		</ul>
+	`;
+	return adminMail(recipients, `Action needed: payment ${details.reference} has no order`, bodyContent);
+}
+
 // Login Alert Mail
 export async function loginAlertMail(userEmail: string, ipAddress?: string) {
 	const loginDate = new Date();

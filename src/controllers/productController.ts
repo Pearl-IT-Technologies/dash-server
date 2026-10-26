@@ -3,14 +3,51 @@ import { Request, Response } from "express";
 import Product from "../models/Product";
 import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
-import { io } from "../index";
+import mongoose from "mongoose";
 import { convertProductsPrices, convertProductPrices } from "../utils/currencyHelper";
+import { emitProductEvent, emitProductDeleted } from "../utils/realtime";
+import { PUBLIC_PRODUCT_FILTER } from "../utils/productVisibility";
+
+// Fields staff may set through create/update. Ratings, review counts, ids and
+// timestamps are system-managed and are ignored if sent.
+const WRITABLE_PRODUCT_FIELDS = [
+	"name",
+	"description",
+	"price",
+	"originalPrice",
+	"images",
+	"category",
+	"subcategory",
+	"gender",
+	"sizes",
+	"colors",
+	"stockCount",
+	"features",
+	"isNewProduct",
+	"isFeatured",
+	"isActive",
+	"visibility",
+	"tags",
+	"sku",
+	"weight",
+	"dimensions",
+	"seoTitle",
+	"seoDescription",
+] as const;
+
+const pickProductFields = (body: any) => {
+	const data: Record<string, any> = {};
+	for (const field of WRITABLE_PRODUCT_FIELDS) {
+		if (body && body[field] !== undefined) data[field] = body[field];
+	}
+	return data;
+};
 
 // @desc    Get all products
 // @route   GET /api/products
 // @access  Public
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
-	const products = await Product.find({ isActive: true });
+	const products = await Product.find(PUBLIC_PRODUCT_FILTER);
 	const convertedProducts = await convertProductsPrices(products);
 	
 	res.status(200).json(convertedProducts);
@@ -25,9 +62,13 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 		throw new AppError("Invalid product ID", 400);
 	}
 
+	if (!mongoose.isValidObjectId(id)) {
+		throw new AppError("Product not found", 404);
+	}
+
 	const product = await Product.findOne({
 		_id: id,
-		isActive: true,
+		...PUBLIC_PRODUCT_FILTER,
 	});
 
 	if (!product) {
@@ -43,11 +84,11 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/products
 // @access  Private (Admin/Staff)
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
-	const product = await Product.create(req.body);
+	const product = await Product.create(pickProductFields(req.body));
 	const convertedProduct = await convertProductPrices(product);
 
 	// Emit real-time update
-	io.emit("product-created", convertedProduct);
+	emitProductEvent("product-created", convertedProduct);
 	res.status(201).json(convertedProduct);
 });
 
@@ -60,7 +101,13 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 		throw new AppError("Invalid product ID", 400);
 	}
 
-	const product = await Product.findByIdAndUpdate(id, req.body, {
+	const updateData = pickProductFields(req.body);
+	// Keep inStock in sync (the pre-save hook doesn't run on findByIdAndUpdate)
+	if (typeof updateData.stockCount === "number") {
+		updateData.inStock = updateData.stockCount > 0;
+	}
+
+	const product = await Product.findByIdAndUpdate(id, updateData, {
 		new: true,
 		runValidators: true,
 	});
@@ -70,7 +117,11 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 	}
 
 	const convertedProduct = await convertProductPrices(product);
-	io.emit("inventory-updated", convertedProduct);
+	if (product.visibility === "private" || !product.isActive) {
+		// Drop it from public storefronts that hold it in memory (no-op if it wasn't public)
+		emitProductDeleted({ id: product.id, visibility: "public", isActive: true });
+	}
+	emitProductEvent("inventory-updated", convertedProduct);
 	res.status(200).json(convertedProduct);
 });
 
@@ -91,7 +142,7 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
 
 	await product.deleteOne();
 
-	io.emit("product-deleted", product.id);
+	emitProductDeleted(product);
 
 	res.status(200).json({
 		success: true,
@@ -127,7 +178,7 @@ export const updateProductStock = asyncHandler(async (req: Request, res: Respons
 	}
 
 	const convertedProduct = await convertProductPrices(product);
-	io.emit("inventory-updated", convertedProduct);
+	emitProductEvent("inventory-updated", convertedProduct);
 	res.status(200).json(convertedProduct);
 });
 
@@ -135,7 +186,43 @@ export const updateProductStock = asyncHandler(async (req: Request, res: Respons
 // @route   GET /api/products/categories
 // @access  Public
 export const getProductCategories = asyncHandler(async (req: Request, res: Response) => {
-	const categories = await Product.distinct("category", { isActive: true });
+	const categories = await Product.distinct("category", PUBLIC_PRODUCT_FILTER);
 
 	res.status(200).json(categories);
+});
+
+// @desc    Get all products including private and inactive ones
+// @route   GET /api/products/admin/all
+// @access  Private (Admin/Staff)
+export const getAllProductsForStaff = asyncHandler(async (req: Request, res: Response) => {
+	const filter: Record<string, any> = {};
+	if (req.query.visibility === "public" || req.query.visibility === "private") {
+		filter.visibility = req.query.visibility === "public" ? { $ne: "private" } : "private";
+	}
+	const products = await Product.find(filter).sort({ createdAt: -1 });
+	const convertedProducts = await convertProductsPrices(products);
+	res.status(200).json(convertedProducts);
+});
+
+// @desc    Toggle product visibility (public / private sale)
+// @route   PATCH /api/products/:id/visibility
+// @access  Private (Admin/Staff)
+export const updateProductVisibility = asyncHandler(async (req: Request, res: Response) => {
+	const { visibility } = req.body;
+	if (visibility !== "public" && visibility !== "private") {
+		throw new AppError("visibility must be 'public' or 'private'", 400);
+	}
+
+	const product = await Product.findByIdAndUpdate(req.params.id, { visibility }, { new: true, runValidators: true });
+	if (!product) {
+		throw new AppError("Product not found", 404);
+	}
+
+	const convertedProduct = await convertProductPrices(product);
+	if (visibility === "private") {
+		// Remove it from public storefronts that hold it in memory
+		emitProductDeleted({ id: product.id, visibility: "public", isActive: true });
+	}
+	emitProductEvent("inventory-updated", convertedProduct);
+	res.status(200).json(convertedProduct);
 });

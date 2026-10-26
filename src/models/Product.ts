@@ -19,6 +19,7 @@ export interface IProduct extends Document {
 	isNewProduct: boolean;
 	isFeatured: boolean;
 	isActive: boolean;
+	visibility: "public" | "private";
 	tags: string[];
 	sku: string;
 	weight?: number;
@@ -138,6 +139,13 @@ const ProductSchema = new Schema<IProduct>(
 			default: true,
 			index: true,
 		},
+		// "private" products never appear in public listings; they are sold via PrivateLink only
+		visibility: {
+			type: String,
+			enum: ["public", "private"],
+			default: "public",
+			index: true,
+		},
 		tags: [
 			{
 				type: String,
@@ -189,7 +197,7 @@ const ProductSchema = new Schema<IProduct>(
 			transform: function (doc, ret) {
 				ret.id = ret._id;
 				ret.isNew = ret.isNewProduct;
-				delete ret.__v;
+				delete (ret as any).__v;
 				return ret;
 			},
 		},

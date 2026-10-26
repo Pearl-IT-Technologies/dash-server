@@ -17,8 +17,10 @@ import orderRoutes from "./routes/orders";
 import userRoutes from "./routes/users";
 import uploadRoutes from "./routes/upload";
 import settingsRoutes from "./routes/settings";
+import privateLinkRoutes from "./routes/privateLinks";
 import { initSocket } from "./utils/socket";
 import { verifyTransporter } from "./config/email";
+import { getJwtSecret } from "./middleware/auth";
 
 const app = express();
 const server = createServer(app);
@@ -99,6 +101,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/private-links", privateLinkRoutes);
 
 // Socket.IO for real-time features
 initSocket(io);
@@ -109,6 +112,11 @@ app.use(errorHandler);
 // Database connection and server startup
 const startServer = async () => {
 	try {
+		// Fail fast on missing secrets
+		getJwtSecret();
+		if (!process.env.PAYSTACK_SECRET_KEY) {
+			console.warn("⚠️ PAYSTACK_SECRET_KEY is not set; Paystack verification will fail");
+		}
 		await connectDatabase();
 		await verifyTransporter();
 		console.log("✅ Database connected successfully");
@@ -138,5 +146,8 @@ process.on("SIGINT", () => {
 	});
 });
 
-startServer();
+// Don't boot the server/DB when imported by tests
+if (process.env.NODE_ENV !== "test") {
+	startServer();
+}
 export default app;

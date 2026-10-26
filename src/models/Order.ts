@@ -43,6 +43,8 @@ export interface IOrder extends Document {
 	cancelledAt?: Date;
 	cancelReason?: string;
 	notes?: string;
+	source: "public" | "private_link";
+	privateLink?: mongoose.Types.ObjectId;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -205,13 +207,24 @@ const OrderSchema = new Schema<IOrder>(
 			trim: true,
 			maxlength: [500, "Notes cannot exceed 500 characters"],
 		},
+		source: {
+			type: String,
+			enum: ["public", "private_link"],
+			default: "public",
+			index: true,
+		},
+		privateLink: {
+			type: Schema.Types.ObjectId,
+			ref: "PrivateLink",
+			index: true,
+		},
 	},
 	{
 		timestamps: true,
 		toJSON: {
 			transform: function (doc, ret) {
 				ret.id = ret._id;
-				delete ret.__v;
+				delete (ret as any).__v;
 				return ret;
 			},
 		},
@@ -221,6 +234,11 @@ const OrderSchema = new Schema<IOrder>(
 
 //Index
 OrderSchema.index({ createdAt: -1 });
+// A Paystack reference can only ever back one order
+OrderSchema.index(
+	{ "paymentDetails.reference": 1 },
+	{ unique: true, partialFilterExpression: { "paymentDetails.reference": { $type: "string" } } },
+);
 
 const Order = mongoose.model<IOrder>("Order", OrderSchema);
 

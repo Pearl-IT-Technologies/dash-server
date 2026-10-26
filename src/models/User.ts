@@ -16,7 +16,6 @@ interface IAddress {
 export type UserAddress = Array<IAddress>;
 
 export interface IUser extends Document {
-	_id: string;
 	firstName: string;
 	lastName: string;
 	username: string;
@@ -199,8 +198,8 @@ const UserSchema = new Schema<IUser>(
 			virtuals: true,
 			transform: function (doc, ret) {
 				ret.id = ret._id;
-				delete ret.__v;
-				delete ret.password;
+				delete (ret as any).__v;
+				delete (ret as any).password;
 				return ret;
 			},
 		},

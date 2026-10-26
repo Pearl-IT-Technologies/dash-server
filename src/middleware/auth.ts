@@ -22,7 +22,14 @@ interface JwtPayload {
 	exp: number;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
+// No fallback: a missing secret must never silently accept tokens signed with a default key.
+export const getJwtSecret = (): string => {
+	const secret = process.env.JWT_SECRET;
+	if (!secret) {
+		throw new Error("JWT_SECRET is not defined in environment variables");
+	}
+	return secret;
+};
 
 export const protect = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
 	// 1) Getting token and check if it's there
@@ -39,7 +46,7 @@ export const protect = asyncHandler(async (req: Request, res: Response, next: Ne
 	}
 
 	// 2) Verification token
-	const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+	const decoded = jwt.verify(token, getJwtSecret()) as JwtPayload;
 
 	// 3) Check if user still exists
   const currentUser = await User.findById(decoded.userId);
@@ -81,7 +88,7 @@ export const optionalAuth = asyncHandler(async (req: Request, res: Response, nex
 
 	if (token) {
 		try {
-			const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+			const decoded = jwt.verify(token, getJwtSecret()) as JwtPayload;
 			const currentUser = await User.findById(decoded.userId);
 
 			if (currentUser && currentUser.isActive) {
