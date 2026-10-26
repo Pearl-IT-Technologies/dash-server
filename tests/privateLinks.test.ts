@@ -153,7 +153,7 @@ describe("private link management", () => {
 		const { token: auth } = await tokenFor("admin");
 		const res = await createLink(auth, { title: "VIP", items: [{ product: p.id, size: "L", color: "red", quantity: 2 }] });
 		expect(res.body.token).toHaveLength(43);
-		expect(res.body.url).toMatch(new RegExp(`/p/${res.body.token}$`));
+		expect(res.body.url).toBe(`https://www.dashshops.com/p/${res.body.token}`);
 		expect(res.body.tokenHash).toBeUndefined();
 		const hours = (new Date(res.body.expiresAt).getTime() - Date.now()) / 3600000;
 		expect(hours).toBeGreaterThan(47.9);
@@ -165,6 +165,17 @@ describe("private link management", () => {
 		const list = await request(app).get("/api/private-links").set("Authorization", `Bearer ${auth}`);
 		expect(list.body[0].token).toBeUndefined();
 		expect(list.body[0].status).toBe("active");
+	});
+
+	it("builds link URLs from PRIVATE_LINK_BASE_URL, not CLIENT_URL", async () => {
+		const p = await makeProduct();
+		const { token } = await tokenFor("admin");
+		process.env.CLIENT_URL = "https://dash-client.fly.dev";
+		process.env.PRIVATE_LINK_BASE_URL = "https://shop.example.com/";
+		const res = await createLink(token, { title: "x", items: [{ product: p.id, quantity: 1 }] });
+		expect(res.body.url).toBe(`https://shop.example.com/p/${res.body.token}`);
+		delete process.env.PRIVATE_LINK_BASE_URL;
+		delete process.env.CLIENT_URL;
 	});
 
 	it("validates preset variants and quantities", async () => {
