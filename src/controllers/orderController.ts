@@ -17,7 +17,7 @@ import { getStaffMails } from "../utils/GetStaffMails";
 import { convertOrdersPrices, convertOrderPrices, getExchangeRate } from "../utils/currencyHelper";
 import { buildQuote } from "../utils/pricing";
 import { PUBLIC_PRODUCT_FILTER } from "../utils/productVisibility";
-import PrivateLink, { hashLinkToken, usableLinkFilter } from "../models/PrivateLink";
+import PrivateLink, { hashLinkToken, itemColorOptions, itemSizeOptions, usableLinkFilter } from "../models/PrivateLink";
 import { logLinkEvent } from "../models/PrivateLinkEvent";
 import { getRealClientIp } from "../utils/GetIp";
 
@@ -117,7 +117,14 @@ interface CartLine {
 const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }> => {
 	const { items, privateLinkToken } = body;
 	let link: any = null;
-	let requested: { productId: any; quantity: number; size?: string; color?: string }[];
+	let requested: {
+		productId: any;
+		quantity: number;
+		size?: string;
+		color?: string;
+		linkItem?: any;
+		selection?: { size?: string; color?: string };
+	}[];
 
 	if (privateLinkToken !== undefined && privateLinkToken !== null && privateLinkToken !== "") {
 		if (typeof privateLinkToken !== "string") {
@@ -127,11 +134,15 @@ const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }>
 		if (!link) {
 			throw new AppError("Private link not found", 404);
 		}
-		requested = link.items.map((item: any) => ({
+		// Buyer choices apply only to "choosable" items; locked items always use the preset
+		const selections = Array.isArray(body.selections) ? body.selections : [];
+		requested = link.items.map((item: any, index: number) => ({
 			productId: item.product,
 			quantity: item.quantity,
 			size: item.size,
 			color: item.color,
+			linkItem: item,
+			selection: item.specMode === "choosable" ? selections[index] : undefined,
 		}));
 	} else {
 		if (!Array.isArray(items) || items.length === 0) {
@@ -156,7 +167,20 @@ const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }>
 		if (!product) {
 			throw new AppError(link ? "An item on this private link is no longer available" : `Product ${item.productId} not found`, 404);
 		}
-		lines.push({ product, quantity: item.quantity, size: item.size, color: item.color });
+		let { size, color } = item;
+		if (item.linkItem?.specMode === "choosable") {
+			const sizeOptions = itemSizeOptions(item.linkItem, product);
+			const colorOptions = itemColorOptions(item.linkItem, product);
+			size = typeof item.selection?.size === "string" && item.selection.size ? item.selection.size : size;
+			color = typeof item.selection?.color === "string" && item.selection.color ? item.selection.color : color;
+			if (sizeOptions.length && (!size || !sizeOptions.includes(size))) {
+				throw new AppError(`Please choose a valid size for ${product.name}`, 400);
+			}
+			if (colorOptions.length && (!color || !colorOptions.includes(color))) {
+				throw new AppError(`Please choose a valid colour for ${product.name}`, 400);
+			}
+		}
+		lines.push({ product, quantity: item.quantity, size, color });
 	}
 
 	return { link, lines };

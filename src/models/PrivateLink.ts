@@ -3,11 +3,18 @@ import crypto from "crypto";
 
 export const DEFAULT_LINK_TTL_HOURS = 48;
 
+export type LinkItemSpecMode = "locked" | "choosable";
+
 export interface IPrivateLinkItem {
 	product: mongoose.Types.ObjectId;
-	size?: string;
+	size?: string; // preset (locked) or default (choosable)
 	color?: string;
 	quantity: number;
+	// "locked": buyer gets exactly size/color. "choosable": buyer picks from allowedSizes/allowedColors
+	// (empty list = all of the product's options)
+	specMode: LinkItemSpecMode;
+	allowedSizes: string[];
+	allowedColors: string[];
 }
 
 export type PrivateLinkStatus = "active" | "expired" | "revoked" | "exhausted";
@@ -35,6 +42,9 @@ const PrivateLinkItemSchema = new Schema<IPrivateLinkItem>(
 		size: { type: String, trim: true },
 		color: { type: String, trim: true },
 		quantity: { type: Number, required: true, min: [1, "Quantity must be at least 1"] },
+		specMode: { type: String, enum: ["locked", "choosable"], default: "locked" },
+		allowedSizes: { type: [String], default: [] },
+		allowedColors: { type: [String], default: [] },
 	},
 	{ _id: false },
 );
@@ -119,3 +129,9 @@ export const usableLinkFilter = () => ({
 const PrivateLink = mongoose.model<IPrivateLink>("PrivateLink", PrivateLinkSchema);
 
 export default PrivateLink;
+
+// Options the buyer may pick for a choosable item (allowed subset, or every product option)
+export const itemSizeOptions = (item: Partial<IPrivateLinkItem>, product: { sizes?: string[] }) =>
+	item.allowedSizes?.length ? item.allowedSizes : product.sizes || [];
+export const itemColorOptions = (item: Partial<IPrivateLinkItem>, product: { colors?: string[] }) =>
+	item.allowedColors?.length ? item.allowedColors : product.colors || [];

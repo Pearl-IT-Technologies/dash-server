@@ -1,7 +1,15 @@
 // controllers/privateLinkController.ts
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import PrivateLink, { DEFAULT_LINK_TTL_HOURS, deriveLinkToken, generateLinkToken, hashLinkToken } from "../models/PrivateLink";
+import { z } from "zod";
+import PrivateLink, {
+	DEFAULT_LINK_TTL_HOURS,
+	deriveLinkToken,
+	generateLinkToken,
+	hashLinkToken,
+	itemColorOptions,
+	itemSizeOptions,
+} from "../models/PrivateLink";
 import PrivateLinkEvent, { logLinkEvent } from "../models/PrivateLinkEvent";
 import Product from "../models/Product";
 import Order from "../models/Order";
@@ -16,19 +24,28 @@ const MAX_TTL_HOURS = 24 * 90;
 const linkUrl = (token: string) =>
 	`${(process.env.PRIVATE_LINK_BASE_URL || "https://www.dashshops.com").replace(/\/+$/, "")}/p/${token}`;
 
-// Validate and normalise preset cart items: product + optional size/color + quantity
+const linkItemSchema = z.object({
+	product: z.string().refine((id) => mongoose.isValidObjectId(id), "Invalid product in link items"),
+	size: z.string().trim().optional().or(z.literal("")),
+	color: z.string().trim().optional().or(z.literal("")),
+	quantity: z.number().int("Invalid item quantity").min(1, "Invalid item quantity"),
+	specMode: z.enum(["locked", "choosable"]).default("locked"),
+	allowedSizes: z.array(z.string().trim().min(1)).default([]),
+	allowedColors: z.array(z.string().trim().min(1)).default([]),
+});
+
+// Validate and normalise preset cart items: product + size/color (+ optional buyer choice) + quantity
 const parseItems = async (items: any) => {
 	if (!Array.isArray(items) || items.length === 0) {
 		throw new AppError("At least one item is required", 400);
 	}
 	const parsed = [];
-	for (const item of items) {
-		if (!item || !mongoose.isValidObjectId(item.product)) {
-			throw new AppError("Invalid product in link items", 400);
+	for (const raw of items) {
+		const result = linkItemSchema.safeParse(raw);
+		if (!result.success) {
+			throw new AppError(result.error.issues[0]?.message || "Invalid link item", 400);
 		}
-		if (!Number.isInteger(item.quantity) || item.quantity < 1) {
-			throw new AppError("Invalid item quantity", 400);
-		}
+		const item = result.data;
 		const product = await Product.findOne({ _id: item.product, isActive: true });
 		if (!product) {
 			throw new AppError(`Product ${item.product} not found or inactive`, 404);
@@ -39,7 +56,24 @@ const parseItems = async (items: any) => {
 		if (item.color && !product.colors.includes(item.color)) {
 			throw new AppError(`Color ${item.color} is not available for ${product.name}`, 400);
 		}
-		parsed.push({ product: product._id, size: item.size, color: item.color, quantity: item.quantity });
+		const badSize = item.allowedSizes.find((size) => !product.sizes.includes(size));
+		if (badSize) {
+			throw new AppError(`Size ${badSize} is not available for ${product.name}`, 400);
+		}
+		const badColor = item.allowedColors.find((color) => !product.colors.includes(color));
+		if (badColor) {
+			throw new AppError(`Color ${badColor} is not available for ${product.name}`, 400);
+		}
+		const choosable = item.specMode === "choosable";
+		parsed.push({
+			product: product._id,
+			size: item.size || undefined,
+			color: item.color || undefined,
+			quantity: item.quantity,
+			specMode: item.specMode,
+			allowedSizes: choosable ? item.allowedSizes : [],
+			allowedColors: choosable ? item.allowedColors : [],
+		});
 	}
 	return parsed;
 };
@@ -259,6 +293,7 @@ export const resolvePrivateLink = asyncHandler(async (req: Request, res: Respons
 			continue;
 		}
 		const converted = await convertProductPrices(product);
+		const choosable = item.specMode === "choosable";
 		items.push({
 			product: {
 				id: converted.id,
@@ -267,11 +302,19 @@ export const resolvePrivateLink = asyncHandler(async (req: Request, res: Respons
 				images: converted.images,
 				price: converted.price,
 				priceNGN: converted.priceNGN,
+				originalPrice: converted.originalPrice,
 				category: converted.category,
+				subcategory: converted.subcategory,
+				features: converted.features,
+				sizes: converted.sizes,
+				colors: converted.colors,
 			},
 			size: item.size,
 			color: item.color,
 			quantity: item.quantity,
+			specMode: choosable ? "choosable" : "locked",
+			sizeOptions: choosable ? itemSizeOptions(item, product) : [],
+			colorOptions: choosable ? itemColorOptions(item, product) : [],
 			lineTotalNGN: Math.round(product.price * rate) * item.quantity,
 			available: product.stockCount >= item.quantity,
 		});
