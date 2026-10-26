@@ -167,7 +167,6 @@ public/uploads/
 *.crt
 
 # Package manager lock files (keep one)
-package-lock.json
 # yarn.lock
 
 # PM2

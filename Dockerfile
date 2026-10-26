@@ -20,6 +20,9 @@ FROM base AS build
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
 
+# Test-only Mongo binary is never needed in the image
+ENV MONGOMS_DISABLE_POSTINSTALL=1
+
 # Install node modules
 COPY package-lock.json package.json ./
 RUN npm ci --include=dev
@@ -41,5 +44,5 @@ FROM base
 COPY --from=build /app /app
 
 # Start the server by default, this can be overwritten at runtime
-EXPOSE 3000
+EXPOSE 5000
 CMD [ "npm", "run", "start" ]
