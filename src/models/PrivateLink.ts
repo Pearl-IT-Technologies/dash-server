@@ -14,6 +14,7 @@ export type PrivateLinkStatus = "active" | "expired" | "revoked" | "exhausted";
 
 export interface IPrivateLink extends Document {
 	tokenHash: string;
+	tokenNonce?: string | null;
 	title: string;
 	note?: string;
 	items: IPrivateLinkItem[];
@@ -42,6 +43,9 @@ const PrivateLinkSchema = new Schema<IPrivateLink>(
 	{
 		// Only the sha256 of the token is stored; the raw token is returned once at creation
 		tokenHash: { type: String, required: true, unique: true, select: false },
+		// Random per-link nonce; token = HMAC(secret, nonce) so staff can re-copy the URL.
+		// Links created before this existed have no nonce and cannot be re-shown.
+		tokenNonce: { type: String, default: null, select: false },
 		title: { type: String, required: true, trim: true, maxlength: 120 },
 		note: { type: String, trim: true, maxlength: 500 },
 		items: {
@@ -68,6 +72,7 @@ const PrivateLinkSchema = new Schema<IPrivateLink>(
 				ret.id = ret._id;
 				delete (ret as any).__v;
 				delete (ret as any).tokenHash;
+				delete (ret as any).tokenNonce;
 				return ret;
 			},
 		},
@@ -81,9 +86,27 @@ PrivateLinkSchema.virtual("status").get(function (this: IPrivateLink): PrivateLi
 	return "active";
 });
 
+// True when the URL can be rebuilt (requires the nonce to be selected in the query)
+PrivateLinkSchema.virtual("recopyable").get(function (this: IPrivateLink) {
+	return !!this.tokenNonce;
+});
+
 PrivateLinkSchema.index({ createdAt: -1 });
 
-export const generateLinkToken = () => crypto.randomBytes(32).toString("base64url");
+const linkSecret = () => {
+	const secret = process.env.PRIVATE_LINK_SECRET || process.env.JWT_SECRET;
+	if (!secret) throw new Error("PRIVATE_LINK_SECRET or JWT_SECRET must be set");
+	return secret;
+};
+
+export const deriveLinkToken = (nonce: string) =>
+	crypto.createHmac("sha256", linkSecret()).update(`private-link:${nonce}`).digest("base64url");
+
+// New token plus the nonce needed to rebuild it later
+export const generateLinkToken = () => {
+	const nonce = crypto.randomBytes(32).toString("base64url");
+	return { token: deriveLinkToken(nonce), nonce };
+};
 export const hashLinkToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 
 // Mongo filter for links that can still be used right now
