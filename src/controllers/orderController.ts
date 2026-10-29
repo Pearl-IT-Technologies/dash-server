@@ -5,7 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { AppError } from "../utils/AppError";
 import crypto from "crypto";
 import mongoose from "mongoose";
-import { emitOrderEvent, emitProductEvent } from "../utils/realtime";
+import { emitOrderEvent, emitProductEvent, emitInventoryUpdate } from "../utils/realtime";
 import { verifyPaystackPayment } from "../utils/PaystackVerification";
 import {
 	orderPlacedMail,
@@ -333,6 +333,7 @@ const placeOrder = async (req: Request, res: Response) => {
 	const rollback = async () => {
 		for (const r of reserved) {
 			await Product.updateOne({ _id: r.id }, { $inc: { stockCount: r.quantity }, $set: { inStock: true } });
+			await emitInventoryUpdate(r.id);
 		}
 		if (linkUseConsumed) {
 			await PrivateLink.updateOne({ _id: link._id }, { $inc: { uses: -1 } });
@@ -373,7 +374,7 @@ const placeOrder = async (req: Request, res: Response) => {
 				lowStocks.push(product);
 			}
 
-			emitProductEvent("inventory-updated", product);
+			await emitInventoryUpdate(product);
 		}
 	} catch (error) {
 		await rollback();
@@ -667,6 +668,7 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
 	// Restore product stock
 	for (const item of order.items) {
 		await Product.updateOne({ _id: item.product }, { $inc: { stockCount: item.quantity }, $set: { inStock: true } });
+		await emitInventoryUpdate(item.product);
 	}
 
 	order.status = "cancelled";

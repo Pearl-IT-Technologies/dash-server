@@ -1,24 +1,25 @@
+import { AppError } from "../utils/AppError";
 import { Request, Response } from "express";
 import { Receiving } from "../models/Receiving";
 import { asyncHandler } from "../utils/asyncHandler";
 import Product from "../models/Product";
-import { emitProductEvent } from "../utils/realtime";
+import { emitInventoryUpdate } from "../utils/realtime";
 
 // @desc    Record new stock received
 // @route   POST /api/receiving
 // @access  Private/Admin or Storekeeper
 export const recordReceiving = asyncHandler(async (req: Request, res: Response) => {
-	const { productId, quantity, note } = req.body;
+	const { productId, note } = req.body;
+	// Coerce: a string quantity would otherwise concatenate ("10" + 5 -> "105")
+	const quantity = Number(req.body.quantity);
 
-	if (!productId || !quantity || quantity <= 0) {
-		res.status(400);
-		throw new Error("Product ID and positive quantity are required.");
+	if (!productId || !Number.isInteger(quantity) || quantity <= 0) {
+		throw new AppError("Product ID and a positive whole quantity are required.", 400);
 	}
 
 	const product = await Product.findById(productId);
 	if (!product) {
-		res.status(404);
-		throw new Error("Product not found.");
+		throw new AppError("Product not found.", 404);
 	}
 
 	// Create receiving record
@@ -30,10 +31,13 @@ export const recordReceiving = asyncHandler(async (req: Request, res: Response) 
 	});
 
 	// Update product stock
-	product.stockCount += quantity;
-	await product.save();
+	const updated = await Product.findByIdAndUpdate(
+		product._id,
+		{ $inc: { stockCount: quantity }, $set: { inStock: true } },
+		{ new: true },
+	);
 
-	emitProductEvent("inventory-updated", product);
+	await emitInventoryUpdate(updated);
 
 	res.status(201).json({
 		success: true,
