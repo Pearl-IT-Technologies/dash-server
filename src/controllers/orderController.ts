@@ -114,6 +114,44 @@ interface CartLine {
 
 // Resolve what is being bought into product documents without touching stock.
 // With a private link token the link's preset cart is used and the body's items are ignored.
+// Cart lines for a private collection: product must belong to the link, options must be the
+// product's real sizes/colours, and the total quantity per product must fit current stock.
+const resolveCollectionCart = async (link: any, items: any[]): Promise<CartLine[]> => {
+	if (items.length > 50) {
+		throw new AppError("Too many items in cart", 400);
+	}
+	const allowed = new Set(link.items.map((item: any) => String(item.product)));
+	const lines: CartLine[] = [];
+	const perProduct = new Map<string, number>();
+	for (const item of items) {
+		if (!item || !mongoose.isValidObjectId(item.productId) || !allowed.has(String(item.productId))) {
+			throw new AppError("An item in your cart is not part of this collection", 400);
+		}
+		if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+			throw new AppError("Invalid item quantity", 400);
+		}
+		const product = await Product.findOne({ _id: item.productId, isActive: true });
+		if (!product) {
+			throw new AppError("An item in this collection is no longer available", 404);
+		}
+		const size = typeof item.size === "string" && item.size ? item.size : undefined;
+		const color = typeof item.color === "string" && item.color ? item.color : undefined;
+		if (product.sizes.length && (!size || !product.sizes.includes(size))) {
+			throw new AppError(`Please choose a valid size for ${product.name}`, 400);
+		}
+		if (product.colors.length && (!color || !product.colors.includes(color))) {
+			throw new AppError(`Please choose a valid colour for ${product.name}`, 400);
+		}
+		const total = (perProduct.get(String(product._id)) || 0) + item.quantity;
+		if (total > product.stockCount) {
+			throw new AppError(`Only ${product.stockCount} of ${product.name} left in stock`, 400);
+		}
+		perProduct.set(String(product._id), total);
+		lines.push({ product, quantity: item.quantity, size: product.sizes.length ? size : undefined, color: product.colors.length ? color : undefined });
+	}
+	return lines;
+};
+
 const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }> => {
 	const { items, privateLinkToken } = body;
 	let link: any = null;
@@ -134,7 +172,11 @@ const resolveCart = async (body: any): Promise<{ link: any; lines: CartLine[] }>
 		if (!link) {
 			throw new AppError("Private link not found", 404);
 		}
-		// Buyer choices apply only to "choosable" items; locked items always use the preset
+		if (Array.isArray(items) && items.length > 0) {
+			// Shoppable collection: the buyer's own cart lines, limited to the link's products
+			return { link, lines: await resolveCollectionCart(link, items) };
+		}
+		// Legacy preset cart (older clients): buyer choices apply only to "choosable" items
 		const selections = Array.isArray(body.selections) ? body.selections : [];
 		requested = link.items.map((item: any, index: number) => ({
 			productId: item.product,

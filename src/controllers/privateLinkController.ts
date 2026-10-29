@@ -28,7 +28,7 @@ const linkItemSchema = z.object({
 	product: z.string().refine((id) => mongoose.isValidObjectId(id), "Invalid product in link items"),
 	size: z.string().trim().optional().or(z.literal("")),
 	color: z.string().trim().optional().or(z.literal("")),
-	quantity: z.number().int("Invalid item quantity").min(1, "Invalid item quantity"),
+	quantity: z.number().int("Invalid item quantity").min(1, "Invalid item quantity").default(1),
 	specMode: z.enum(["locked", "choosable"]).default("locked"),
 	allowedSizes: z.array(z.string().trim().min(1)).default([]),
 	allowedColors: z.array(z.string().trim().min(1)).default([]),
@@ -320,12 +320,40 @@ export const resolvePrivateLink = asyncHandler(async (req: Request, res: Respons
 		});
 	}
 
+	// Shoppable collection: each distinct, active product once, with the details a storefront needs
+	const products = [];
+	const seen = new Set<string>();
+	for (const item of link.items as any[]) {
+		const product = item.product;
+		if (!product || !product.isActive || seen.has(String(product._id))) continue;
+		seen.add(String(product._id));
+		const converted = await convertProductPrices(product);
+		products.push({
+			id: converted.id,
+			name: converted.name,
+			description: converted.description,
+			images: converted.images,
+			price: converted.price,
+			priceNGN: Math.round(product.price * rate),
+			originalPriceNGN: product.originalPrice ? Math.round(product.originalPrice * rate) : undefined,
+			category: converted.category,
+			subcategory: converted.subcategory,
+			brand: converted.brand,
+			features: converted.features,
+			sizes: converted.sizes,
+			colors: converted.colors,
+			inStock: product.stockCount > 0,
+			maxQuantity: product.stockCount,
+		});
+	}
+
 	await logLinkEvent({ link: link._id as any, action: "resolved", ip: getRealClientIp(req) });
 
 	res.status(200).json({
 		title: link.title,
 		note: link.note,
 		expiresAt: link.expiresAt,
-		items,
+		products,
+		items, // legacy preset cart, kept for older clients
 	});
 });

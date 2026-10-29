@@ -273,11 +273,21 @@ describe("private link checkout", () => {
 		return { p, link };
 	};
 
-	it("creates a confirmed guest order from the link's preset cart, ignoring body items", async () => {
+	it("rejects cart items that are not part of the link's collection", async () => {
+		const { link } = await setup();
+		const other = await makeProduct({ price: 1 });
+		mockPaid(kobo(1) * 9 + 500 * 100);
+		const res = await checkout(link.token, undefined, { items: [{ productId: other.id, quantity: 9 }] });
+		expect(res.status).toBe(400);
+		expect(await Order.countDocuments()).toBe(0);
+		expect((await Product.findById(other.id))!.stockCount).toBe(5);
+	});
+
+	it("creates a confirmed guest order from the link's preset cart (legacy clients send no items)", async () => {
 		const { p, link } = await setup();
 		const other = await makeProduct({ price: 1 });
 		mockPaid(kobo(100) * 2); // 2 x $100, free shipping
-		const res = await checkout(link.token, undefined, { items: [{ productId: other.id, quantity: 9 }] });
+		const res = await checkout(link.token);
 		expect(res.status).toBe(201);
 
 		const saved = await Order.findOne();
@@ -412,5 +422,68 @@ describe("item spec mode", () => {
 		const res = await checkout(link.token, undefined, { selections: [{ size: "S", color: "red" }] });
 		expect(res.status).toBe(400);
 		expect((await Product.findById(p.id))!.stockCount).toBe(0);
+	});
+});
+
+describe("shoppable collection", () => {
+	const setup = async (stockCount = 5) => {
+		const a = await makeProduct({ name: "Gown A", sizes: ["S", "M"], colors: ["red", "blue"], stockCount, visibility: "private" });
+		const b = await makeProduct({ name: "Gown B", sizes: [], colors: [], stockCount, visibility: "private" });
+		const outside = await makeProduct({ name: "Outside", stockCount });
+		const { token: auth } = await tokenFor("admin");
+		const res = await createLink(auth, { title: "Collection", items: [{ product: a.id }, { product: b.id }] });
+		expect(res.status).toBe(201);
+		return { a, b, outside, token: res.body.token };
+	};
+
+	it("resolve lists the collection's products with options and stock", async () => {
+		const { token } = await setup();
+		const res = await request(app).get(`/api/private-links/resolve/${token}`);
+		expect(res.status).toBe(200);
+		expect(res.body.products).toHaveLength(2);
+		expect(res.body.products[0]).toMatchObject({ name: "Gown A", sizes: ["S", "M"], colors: ["red", "blue"], inStock: true, maxQuantity: 5 });
+		expect(res.body.products[0].description).toBeDefined();
+		expect(res.body.items).toHaveLength(2); // legacy field still present
+	});
+
+	it("quotes and orders the buyer's own cart lines", async () => {
+		const { a, b, token } = await setup();
+		const items = [
+			{ productId: a.id, size: "M", color: "blue", quantity: 2 },
+			{ productId: b.id, quantity: 1 },
+		];
+		const quote = await request(app).post("/api/orders/quote").send({ privateLinkToken: token, items });
+		expect(quote.status).toBe(200);
+		mockPaid(kobo(300));
+		const res = await checkout(token, undefined, { items });
+		expect(res.status).toBe(201);
+		const order = await Order.findOne();
+		expect(order!.items.map((i: any) => [i.quantity, i.size, i.color])).toEqual([[2, "M", "blue"], [1, undefined, undefined]]);
+		expect((await Product.findById(a.id))!.stockCount).toBe(3);
+		expect((await Product.findById(b.id))!.stockCount).toBe(4);
+	});
+
+	it("rejects products outside the collection, bad options, and over-stock quantities", async () => {
+		const { a, outside, token } = await setup(2);
+		const quote = (items: any[]) => request(app).post("/api/orders/quote").send({ privateLinkToken: token, items });
+		expect((await quote([{ productId: outside.id, quantity: 1 }])).status).toBe(400);
+		expect((await quote([{ productId: a.id, size: "XL", color: "red", quantity: 1 }])).status).toBe(400);
+		expect((await quote([{ productId: a.id, size: "S", quantity: 1 }])).status).toBe(400);
+		expect((await quote([{ productId: a.id, size: "S", color: "red", quantity: 0 }])).status).toBe(400);
+		expect(
+			(await quote([
+				{ productId: a.id, size: "S", color: "red", quantity: 2 },
+				{ productId: a.id, size: "M", color: "red", quantity: 1 },
+			])).status,
+		).toBe(400);
+	});
+
+	it("rejects a short payment for a collection cart", async () => {
+		const { a, token } = await setup();
+		mockPaid(kobo(100));
+		const res = await checkout(token, undefined, { items: [{ productId: a.id, size: "S", color: "red", quantity: 2 }] });
+		expect(res.status).toBe(400);
+		expect(await Order.countDocuments()).toBe(0);
+		expect((await Product.findById(a.id))!.stockCount).toBe(5);
 	});
 });
